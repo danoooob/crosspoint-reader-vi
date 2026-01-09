@@ -7,8 +7,10 @@
 #include <memory>
 
 #include "../ParsedText.h"
+#include "../blocks/ImageBlock.h"
 #include "../blocks/TextBlock.h"
 
+class Epub;
 class Page;
 class GfxRenderer;
 
@@ -16,6 +18,7 @@ class GfxRenderer;
 
 class ChapterHtmlSlimParser {
   const std::string& filepath;
+  const Epub& epub;
   GfxRenderer& renderer;
   std::function<void(std::unique_ptr<Page>)> completePageFn;
   std::function<void(int)> progressFn;  // Progress callback (0-100)
@@ -44,14 +47,18 @@ class ChapterHtmlSlimParser {
   static void XMLCALL characterData(void* userData, const XML_Char* s, int len);
   static void XMLCALL endElement(void* userData, const XML_Char* name);
 
+  void addImageToPage(std::shared_ptr<ImageBlock> image);
+  void processImageTag(const XML_Char** atts);
+
  public:
-  explicit ChapterHtmlSlimParser(const std::string& filepath, GfxRenderer& renderer, const int fontId,
+  explicit ChapterHtmlSlimParser(const std::string& filepath, const Epub& epub, GfxRenderer& renderer, const int fontId,
                                  const float lineCompression, const bool extraParagraphSpacing,
                                  const uint8_t paragraphAlignment, const uint16_t viewportWidth,
                                  const uint16_t viewportHeight,
                                  const std::function<void(std::unique_ptr<Page>)>& completePageFn,
                                  const std::function<void(int)>& progressFn = nullptr)
       : filepath(filepath),
+        epub(epub),
         renderer(renderer),
         fontId(fontId),
         lineCompression(lineCompression),

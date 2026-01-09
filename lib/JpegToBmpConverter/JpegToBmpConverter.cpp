@@ -25,13 +25,13 @@ constexpr bool USE_FLOYD_STEINBERG = false;  // Floyd-Steinberg error diffusion 
 constexpr bool USE_NOISE_DITHERING = false;  // Hash-based noise dithering (good for downsampling)
 // Brightness/Contrast adjustments:
 constexpr bool USE_BRIGHTNESS = true;     // true: apply brightness/gamma adjustments
-constexpr int BRIGHTNESS_BOOST = 10;      // Brightness offset (0-50)
+constexpr int BRIGHTNESS_BOOST = 25;      // Brightness offset (0-50) - increased for e-ink visibility
 constexpr bool GAMMA_CORRECTION = true;   // Gamma curve (brightens midtones)
-constexpr float CONTRAST_FACTOR = 1.15f;  // Contrast multiplier (1.0 = no change, >1 = more contrast)
+constexpr float CONTRAST_FACTOR = 1.05f;  // Contrast multiplier - reduced to prevent darkening shadows
 // Pre-resize to target display size (CRITICAL: avoids dithering artifacts from post-downsampling)
 constexpr bool USE_PRESCALE = true;     // true: scale image to target size before dithering
-constexpr int TARGET_MAX_WIDTH = 480;   // Max width for cover images (portrait display width)
-constexpr int TARGET_MAX_HEIGHT = 800;  // Max height for cover images (portrait display height)
+constexpr int TARGET_MAX_WIDTH = 800;   // Max width for images (match display in landscape)
+constexpr int TARGET_MAX_HEIGHT = 800;  // Max height for images (match display in portrait)
 // ============================================================================
 
 // Integer approximation of gamma correction (brightens midtones)
@@ -428,8 +428,12 @@ unsigned char JpegToBmpConverter::jpegReadCallback(unsigned char* pBuf, const un
 }
 
 // Core function: Convert JPEG file to 2-bit BMP
-bool JpegToBmpConverter::jpegFileToBmpStream(FsFile& jpegFile, Print& bmpOut) {
-  Serial.printf("[%lu] [JPG] Converting JPEG to BMP\n", millis());
+bool JpegToBmpConverter::jpegFileToBmpStream(FsFile& jpegFile, Print& bmpOut, uint16_t maxWidth, uint16_t maxHeight) {
+  Serial.printf("[%lu] [JPG] Converting JPEG to BMP (target: %dx%d)\n", millis(), maxWidth, maxHeight);
+  
+  // Use provided dimensions or fall back to internal defaults
+  const int targetMaxWidth = (maxWidth > 0) ? maxWidth : TARGET_MAX_WIDTH;
+  const int targetMaxHeight = (maxHeight > 0) ? maxHeight : TARGET_MAX_HEIGHT;
 
   // Setup context for picojpeg callback
   JpegReadContext context = {.file = jpegFile, .bufferPos = 0, .bufferFilled = 0};
@@ -464,13 +468,12 @@ bool JpegToBmpConverter::jpegFileToBmpStream(FsFile& jpegFile, Print& bmpOut) {
   uint32_t scaleY_fp = 65536;
   bool needsScaling = false;
 
-  if (USE_PRESCALE && (imageInfo.m_width > TARGET_MAX_WIDTH || imageInfo.m_height > TARGET_MAX_HEIGHT)) {
+  if (USE_PRESCALE && (imageInfo.m_width > targetMaxWidth || imageInfo.m_height > targetMaxHeight)) {
     // Calculate scale to fit within target dimensions while maintaining aspect ratio
-    const float scaleToFitWidth = static_cast<float>(TARGET_MAX_WIDTH) / imageInfo.m_width;
-    const float scaleToFitHeight = static_cast<float>(TARGET_MAX_HEIGHT) / imageInfo.m_height;
-    // We scale to the smaller dimension, so we can potentially crop later.
-    // TODO: ideally, we already crop here.
-    const float scale = (scaleToFitWidth > scaleToFitHeight) ? scaleToFitWidth : scaleToFitHeight;
+    const float scaleToFitWidth = static_cast<float>(targetMaxWidth) / imageInfo.m_width;
+    const float scaleToFitHeight = static_cast<float>(targetMaxHeight) / imageInfo.m_height;
+    // Use smaller scale to ensure image fits within both constraints
+    const float scale = (scaleToFitWidth < scaleToFitHeight) ? scaleToFitWidth : scaleToFitHeight;
 
     outWidth = static_cast<int>(imageInfo.m_width * scale);
     outHeight = static_cast<int>(imageInfo.m_height * scale);
@@ -486,7 +489,7 @@ bool JpegToBmpConverter::jpegFileToBmpStream(FsFile& jpegFile, Print& bmpOut) {
     needsScaling = true;
 
     Serial.printf("[%lu] [JPG] Pre-scaling %dx%d -> %dx%d (fit to %dx%d)\n", millis(), imageInfo.m_width,
-                  imageInfo.m_height, outWidth, outHeight, TARGET_MAX_WIDTH, TARGET_MAX_HEIGHT);
+                  imageInfo.m_height, outWidth, outHeight, targetMaxWidth, targetMaxHeight);
   }
 
   // Write BMP header with output dimensions

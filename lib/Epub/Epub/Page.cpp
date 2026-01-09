@@ -3,7 +3,8 @@
 #include <HardwareSerial.h>
 #include <Serialization.h>
 
-void PageLine::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset) {
+void PageLine::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset,
+                      const int viewportWidth) {
   block->render(renderer, fontId, xPos + xOffset, yPos + yOffset);
 }
 
@@ -25,10 +26,47 @@ std::unique_ptr<PageLine> PageLine::deserialize(FsFile& file) {
   return std::unique_ptr<PageLine>(new PageLine(std::move(tb), xPos, yPos));
 }
 
-void Page::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset) const {
-  for (auto& element : elements) {
-    element->render(renderer, fontId, xOffset, yOffset);
+void PageImage::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset,
+                       const int viewportWidth) {
+  if (block) {
+    // Always center images horizontally in the viewport
+    // Pass viewportWidth for proper centering calculation
+    block->render(renderer, xOffset, yPos + yOffset, viewportWidth);
   }
+}
+
+bool PageImage::serialize(FsFile& file) {
+  serialization::writePod(file, xPos);
+  serialization::writePod(file, yPos);
+
+  // serialize ImageBlock pointed to by PageImage
+  return block->serialize(file);
+}
+
+std::unique_ptr<PageImage> PageImage::deserialize(FsFile& file) {
+  int16_t xPos;
+  int16_t yPos;
+  serialization::readPod(file, xPos);
+  serialization::readPod(file, yPos);
+
+  auto ib = ImageBlock::deserialize(file);
+  return std::unique_ptr<PageImage>(new PageImage(std::move(ib), xPos, yPos));
+}
+
+void Page::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset,
+                  const int viewportWidth) const {
+  for (auto& element : elements) {
+    element->render(renderer, fontId, xOffset, yOffset, viewportWidth);
+  }
+}
+
+bool Page::hasImages() const {
+  for (const auto& element : elements) {
+    if (element->getTag() == TAG_PageImage) {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool Page::serialize(FsFile& file) const {
@@ -36,8 +74,9 @@ bool Page::serialize(FsFile& file) const {
   serialization::writePod(file, count);
 
   for (const auto& el : elements) {
-    // Only PageLine exists currently
-    serialization::writePod(file, static_cast<uint8_t>(TAG_PageLine));
+    // Use virtual getTag() method to determine element type (no RTTI needed)
+    serialization::writePod(file, static_cast<uint8_t>(el->getTag()));
+
     if (!el->serialize(file)) {
       return false;
     }
@@ -59,6 +98,9 @@ std::unique_ptr<Page> Page::deserialize(FsFile& file) {
     if (tag == TAG_PageLine) {
       auto pl = PageLine::deserialize(file);
       page->elements.push_back(std::move(pl));
+    } else if (tag == TAG_PageImage) {
+      auto pi = PageImage::deserialize(file);
+      page->elements.push_back(std::move(pi));
     } else {
       Serial.printf("[%lu] [PGE] Deserialization failed: Unknown tag %u\n", millis(), tag);
       return nullptr;

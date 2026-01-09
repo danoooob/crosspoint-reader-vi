@@ -5,6 +5,7 @@
 #include <SDCardManager.h>
 #include <expat.h>
 
+#include "../../Epub.h"
 #include "../Page.h"
 
 const char* HEADER_TAGS[] = {"h1", "h2", "h3", "h4", "h5", "h6"};
@@ -64,8 +65,8 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
   }
 
   if (matches(name, IMAGE_TAGS, NUM_IMAGE_TAGS)) {
-    // TODO: Start processing image tags
-    self->skipUntilDepth = self->depth;
+    // Process image tag - extract and convert the image
+    self->processImageTag(atts);
     self->depth += 1;
     return;
   }
@@ -322,6 +323,121 @@ void ChapterHtmlSlimParser::addLineToPage(std::shared_ptr<TextBlock> line) {
 
   currentPage->elements.push_back(std::make_shared<PageLine>(line, 0, currentPageNextY));
   currentPageNextY += lineHeight;
+}
+
+void ChapterHtmlSlimParser::addImageToPage(std::shared_ptr<ImageBlock> image) {
+  if (!image || image->isEmpty()) {
+    return;
+  }
+
+  const int imageHeight = image->getHeight();
+
+  // Check if this is a "tall" image that should get its own dedicated page
+  // An image deserves a dedicated page if it takes more than 50% of viewport HEIGHT
+  // Width alone should NOT determine dedicated page - wide but short images can be inline
+  const bool isTallImage = (imageHeight > viewportHeight * 50 / 100);
+
+  // If current page has content and image doesn't fit, start new page
+  if (currentPageNextY > 0 && currentPageNextY + imageHeight > viewportHeight) {
+    completePageFn(std::move(currentPage));
+    currentPage.reset(new Page());
+    currentPageNextY = 0;
+  }
+
+  // Center image vertically if it's on a dedicated page (page is empty and image is tall)
+  int imageY = currentPageNextY;
+  if (currentPageNextY == 0 && isTallImage && imageHeight < viewportHeight) {
+    // Center vertically on the page
+    imageY = (viewportHeight - imageHeight) / 2;
+  }
+
+  // Store xPos as 0 - actual centering happens in ImageBlock::render using viewportWidth
+  currentPage->elements.push_back(std::make_shared<PageImage>(image, 0, imageY));
+
+  // If tall image, complete this page immediately (dedicated image page)
+  if (isTallImage) {
+    completePageFn(std::move(currentPage));
+    currentPage.reset(new Page());
+    currentPageNextY = 0;
+  } else {
+    currentPageNextY = imageY + imageHeight;
+    // Add a small gap after the image
+    const int lineHeight = renderer.getLineHeight(fontId) * lineCompression;
+    currentPageNextY += lineHeight / 2;
+  }
+}
+
+void ChapterHtmlSlimParser::processImageTag(const XML_Char** atts) {
+  if (!atts) {
+    return;
+  }
+
+  // Find src attribute (or xlink:href for SVG images in EPUB)
+  std::string imageSrc;
+  for (int i = 0; atts[i]; i += 2) {
+    if (strcmp(atts[i], "src") == 0 || strcmp(atts[i], "xlink:href") == 0 || strcmp(atts[i], "href") == 0) {
+      imageSrc = atts[i + 1];
+      break;
+    }
+  }
+
+  if (imageSrc.empty()) {
+    Serial.printf("[%lu] [EHP] Image tag without src attribute\n", millis());
+    return;
+  }
+
+  // Resolve relative path to absolute path within EPUB
+  std::string imageHref = imageSrc;
+
+  // Handle relative paths (most common case)
+  if (imageSrc[0] != '/') {
+    // Get directory of current HTML file
+    size_t lastSlash = filepath.rfind('/');
+    if (lastSlash != std::string::npos) {
+      std::string htmlDir = filepath.substr(0, lastSlash + 1);
+      // Remove the temp directory prefix from htmlDir to get EPUB-relative path
+      // The filepath is like: "/cache/.tmp_0.html" but we need the original EPUB path
+    }
+    // For now, use the image path as-is relative to content base path
+    imageHref = epub.getBasePath() + imageSrc;
+  }
+
+  // Ensure current text block is processed before adding image
+  if (currentTextBlock && !currentTextBlock->isEmpty()) {
+    makePages();
+  }
+
+  // Ensure current page exists
+  if (!currentPage) {
+    currentPage.reset(new Page());
+    currentPageNextY = 0;
+  }
+
+  // Calculate max dimensions based on screen orientation
+  // Portrait mode (width < height): prioritize full width
+  // Landscape mode (width > height): prioritize full height
+  const bool isLandscape = viewportWidth > viewportHeight;
+
+  uint16_t maxWidth, maxHeight;
+  if (isLandscape) {
+    // Landscape: prioritize full height, allow full viewport
+    maxWidth = viewportWidth;
+    maxHeight = viewportHeight;  // Full height for landscape
+  } else {
+    // Portrait: prioritize full width, allow up to 90% of height
+    maxWidth = viewportWidth;
+    maxHeight = viewportHeight * 9 / 10;  // 90% height for portrait
+  }
+
+  // Create the image block (this will convert JPEG to BMP and cache it)
+  const std::string cacheDir = epub.getCachePath() + "/images";
+  SdMan.mkdir(cacheDir.c_str());
+
+  auto imageBlock = ImageBlock::createFromEpub(epub, imageHref, cacheDir, maxWidth, maxHeight);
+
+  if (imageBlock) {
+    addImageToPage(std::move(imageBlock));
+  }
 }
 
 void ChapterHtmlSlimParser::makePages() {

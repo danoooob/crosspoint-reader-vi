@@ -36,7 +36,7 @@ class Epub {
     cachePath = cacheDir + "/epub_" + std::to_string(std::hash<std::string>{}(this->filepath));
   }
   ~Epub() = default;
-  std::string& getBasePath() { return contentBasePath; }
+  const std::string& getBasePath() const { return contentBasePath; }
   bool load(bool buildIfMissing = true);
   bool clearCache() const;
   void setupCacheDir() const;
