@@ -8,15 +8,18 @@ std::string sanitizeFilename(const std::string& name, size_t maxLength) {
   std::string result;
   result.reserve(name.size());
 
-  for (char c : name) {
+  for (unsigned char c : name) {
     // Replace invalid filename characters with underscore
     if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|') {
       result += '_';
     } else if (c >= 32 && c < 127) {
       // Keep printable ASCII characters
-      result += c;
+      result += static_cast<char>(c);
+    } else if (c >= 0x80) {
+      // Keep UTF-8 multi-byte characters (continuation bytes 0x80-0xBF and start bytes 0xC0-0xF7)
+      result += static_cast<char>(c);
     }
-    // Skip non-printable characters
+    // Skip control characters (0-31 and 127)
   }
 
   // Trim leading/trailing spaces and dots
@@ -27,7 +30,8 @@ std::string sanitizeFilename(const std::string& name, size_t maxLength) {
   size_t end = result.find_last_not_of(" .");
   result = result.substr(start, end - start + 1);
 
-  // Limit filename length
+  // Limit filename length (note: may cut in middle of UTF-8 sequence, but SD card FAT32 doesn't
+  // support long unicode filenames well anyway)
   if (result.length() > maxLength) {
     result.resize(maxLength);
   }
