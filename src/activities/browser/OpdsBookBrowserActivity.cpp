@@ -79,10 +79,10 @@ void OpdsBookBrowserActivity::loop() {
       if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0, 0, 0, 0)) {
         // WiFi connected - just retry fetching the feed
         Serial.printf("[%lu] [OPDS] Retry: WiFi connected, retrying fetch\n", millis());
-      state = BrowserState::LOADING;
-      statusMessage = "Loading...";
-      updateRequired = true;
-      fetchFeed(currentPath);
+        state = BrowserState::LOADING;
+        statusMessage = "Loading...";
+        updateRequired = true;
+        fetchFeed(currentPath);
       } else {
         // WiFi not connected - launch WiFi selection
         Serial.printf("[%lu] [OPDS] Retry: WiFi not connected, launching selection\n", millis());
@@ -227,10 +227,39 @@ void OpdsBookBrowserActivity::render() const {
   }
 
   const auto pageStartIndex = selectorIndex / PAGE_ITEMS * PAGE_ITEMS;
-  renderer.fillRect(0, 60 + (selectorIndex % PAGE_ITEMS) * 30 - 2, pageWidth - 1, 30);
+  const int maxTextWidth = renderer.getScreenWidth() - 40;
+
+  // Build display text for selected item to check if it needs 2 lines
+  std::string selectedDisplayText;
+  if (!entries.empty()) {
+    const auto& selectedEntry = entries[selectorIndex];
+    if (selectedEntry.type == OpdsEntryType::NAVIGATION) {
+      selectedDisplayText = "> " + selectedEntry.title;
+    } else {
+      selectedDisplayText = selectedEntry.title;
+      if (!selectedEntry.author.empty()) {
+        selectedDisplayText += " - " + selectedEntry.author;
+      }
+    }
+  }
+
+  const int selectedTextWidth = renderer.getTextWidth(UI_10_FONT_ID, selectedDisplayText.c_str());
+  const bool selectedNeedsTwoLines = selectedTextWidth > maxTextWidth;
+  const int selectedRowInPage = selectorIndex % PAGE_ITEMS;
+
+  // Draw selection highlight (1.5x height if 2 lines needed)
+  const int highlightHeight = selectedNeedsTwoLines ? 52 : 30;
+  renderer.fillRect(0, 60 + selectedRowInPage * 30 - 2, pageWidth - 1, highlightHeight);
 
   for (size_t i = pageStartIndex; i < entries.size() && i < static_cast<size_t>(pageStartIndex + PAGE_ITEMS); i++) {
     const auto& entry = entries[i];
+    const int rowInPage = i % PAGE_ITEMS;
+    int yOffset = 0;
+
+    // Shift items below the selected item down if selected needs 2 lines
+    if (selectedNeedsTwoLines && rowInPage > selectedRowInPage) {
+      yOffset = 22;  // Extra offset to match the taller highlight
+    }
 
     // Format display text with type indicator
     std::string displayText;
@@ -244,9 +273,38 @@ void OpdsBookBrowserActivity::render() const {
       }
     }
 
-    auto item = renderer.truncatedText(UI_10_FONT_ID, displayText.c_str(), renderer.getScreenWidth() - 40);
-    renderer.drawText(UI_10_FONT_ID, 20, 60 + (i % PAGE_ITEMS) * 30, item.c_str(),
-                      i != static_cast<size_t>(selectorIndex));
+    if (i == static_cast<size_t>(selectorIndex) && selectedNeedsTwoLines) {
+      // Draw selected item on 2 lines
+      const int lineHeight = renderer.getLineHeight(UI_10_FONT_ID);
+
+      // Find a good split point (try to split at space near middle)
+      size_t splitPos = displayText.length() / 2;
+      size_t spacePos = displayText.rfind(' ', splitPos + 10);
+      if (spacePos != std::string::npos && spacePos > displayText.length() / 4) {
+        splitPos = spacePos;
+      } else {
+        // No good space found, just split in half
+        spacePos = displayText.find(' ', splitPos);
+        if (spacePos != std::string::npos && spacePos < displayText.length() * 3 / 4) {
+          splitPos = spacePos;
+        }
+      }
+
+      std::string line1 = displayText.substr(0, splitPos);
+      std::string line2 = (splitPos < displayText.length()) ? displayText.substr(splitPos + 1) : "";
+
+      // Truncate each line if still too long
+      auto item1 = renderer.truncatedText(UI_10_FONT_ID, line1.c_str(), maxTextWidth);
+      auto item2 = renderer.truncatedText(UI_10_FONT_ID, line2.c_str(), maxTextWidth);
+
+      renderer.drawText(UI_10_FONT_ID, 20, 60 + rowInPage * 30, item1.c_str(), false);
+      renderer.drawText(UI_10_FONT_ID, 20, 60 + rowInPage * 30 + lineHeight, item2.c_str(), false);
+    } else {
+      // Draw single line item
+      auto item = renderer.truncatedText(UI_10_FONT_ID, displayText.c_str(), maxTextWidth);
+      renderer.drawText(UI_10_FONT_ID, 20, 60 + rowInPage * 30 + yOffset, item.c_str(),
+                        i != static_cast<size_t>(selectorIndex));
+    }
   }
 
   renderer.displayBuffer();

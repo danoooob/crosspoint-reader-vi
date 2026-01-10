@@ -193,10 +193,58 @@ void FileSelectionActivity::render() const {
   }
 
   const auto pageStartIndex = selectorIndex / PAGE_ITEMS * PAGE_ITEMS;
-  renderer.fillRect(0, 60 + (selectorIndex % PAGE_ITEMS) * 30 - 2, pageWidth - 1, 30);
+  const int maxTextWidth = renderer.getScreenWidth() - 40;
+
+  // Check if selected item needs 2 lines
+  const int selectedTextWidth = renderer.getTextWidth(UI_10_FONT_ID, files[selectorIndex].c_str());
+  const bool selectedNeedsTwoLines = selectedTextWidth > maxTextWidth;
+  const int selectedRowInPage = selectorIndex % PAGE_ITEMS;
+
+  // Draw selection highlight (1.5x height if 2 lines needed)
+  const int highlightHeight = selectedNeedsTwoLines ? 52 : 30;
+  renderer.fillRect(0, 60 + selectedRowInPage * 30 - 2, pageWidth - 1, highlightHeight);
+
   for (size_t i = pageStartIndex; i < files.size() && i < pageStartIndex + PAGE_ITEMS; i++) {
-    auto item = renderer.truncatedText(UI_10_FONT_ID, files[i].c_str(), renderer.getScreenWidth() - 40);
-    renderer.drawText(UI_10_FONT_ID, 20, 60 + (i % PAGE_ITEMS) * 30, item.c_str(), i != selectorIndex);
+    const int rowInPage = i % PAGE_ITEMS;
+    int yOffset = 0;
+
+    // Shift items below the selected item down if selected needs 2 lines
+    if (selectedNeedsTwoLines && rowInPage > selectedRowInPage) {
+      yOffset = 22;  // Extra offset to match the taller highlight
+    }
+
+    if (i == selectorIndex && selectedNeedsTwoLines) {
+      // Draw selected item on 2 lines
+      const std::string& text = files[i];
+      const int lineHeight = renderer.getLineHeight(UI_10_FONT_ID);
+
+      // Find a good split point (try to split at space near middle)
+      size_t splitPos = text.length() / 2;
+      size_t spacePos = text.rfind(' ', splitPos + 10);
+      if (spacePos != std::string::npos && spacePos > text.length() / 4) {
+        splitPos = spacePos;
+      } else {
+        // No good space found, just split in half
+        spacePos = text.find(' ', splitPos);
+        if (spacePos != std::string::npos && spacePos < text.length() * 3 / 4) {
+          splitPos = spacePos;
+        }
+      }
+
+      std::string line1 = text.substr(0, splitPos);
+      std::string line2 = (splitPos < text.length()) ? text.substr(splitPos + 1) : "";
+
+      // Truncate each line if still too long
+      auto item1 = renderer.truncatedText(UI_10_FONT_ID, line1.c_str(), maxTextWidth);
+      auto item2 = renderer.truncatedText(UI_10_FONT_ID, line2.c_str(), maxTextWidth);
+
+      renderer.drawText(UI_10_FONT_ID, 20, 60 + rowInPage * 30, item1.c_str(), false);
+      renderer.drawText(UI_10_FONT_ID, 20, 60 + rowInPage * 30 + lineHeight, item2.c_str(), false);
+    } else {
+      // Draw single line item
+      auto item = renderer.truncatedText(UI_10_FONT_ID, files[i].c_str(), maxTextWidth);
+      renderer.drawText(UI_10_FONT_ID, 20, 60 + rowInPage * 30 + yOffset, item.c_str(), i != selectorIndex);
+    }
   }
 
   renderer.displayBuffer();
