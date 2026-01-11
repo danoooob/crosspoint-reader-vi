@@ -5,10 +5,23 @@
 #include <Update.h>
 
 namespace {
-constexpr char latestReleaseUrl[] = "https://api.github.com/repos/danoooob/crosspoint-reader/releases/latest";
+constexpr char latestReleaseUrl[] = "https://api.github.com/repos/danoooob/crosspoint-reader-vi/releases/latest";
+constexpr char allReleasesUrl[] = "https://api.github.com/repos/danoooob/crosspoint-reader-vi/releases";
+
+bool isDevVersion() {
+  const std::string version = CROSSPOINT_VERSION;
+  return version.find("-dev") != std::string::npos;
 }
+}  // namespace
 
 OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
+  if (isDevVersion()) {
+    return checkForPrereleaseUpdate();
+  }
+  return checkForStableUpdate();
+}
+
+OtaUpdater::OtaUpdaterError OtaUpdater::checkForStableUpdate() {
   const std::unique_ptr<WiFiClientSecure> client(new WiFiClientSecure);
   client->setInsecure();
   HTTPClient http;
@@ -66,6 +79,73 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
 
   Serial.printf("[%lu] [OTA] Found update: %s\n", millis(), latestVersion.c_str());
   return OK;
+}
+
+OtaUpdater::OtaUpdaterError OtaUpdater::checkForPrereleaseUpdate() {
+  const std::unique_ptr<WiFiClientSecure> client(new WiFiClientSecure);
+  client->setInsecure();
+  HTTPClient http;
+
+  Serial.printf("[%lu] [OTA] Fetching prereleases: %s\n", millis(), allReleasesUrl);
+
+  http.begin(*client, allReleasesUrl);
+  http.addHeader("User-Agent", "CrossPoint-ESP32-" CROSSPOINT_VERSION);
+
+  const int httpCode = http.GET();
+  if (httpCode != HTTP_CODE_OK) {
+    Serial.printf("[%lu] [OTA] HTTP error: %d\n", millis(), httpCode);
+    http.end();
+    return HTTP_ERROR;
+  }
+
+  JsonDocument doc;
+  JsonDocument filter;
+  filter[0]["tag_name"] = true;
+  filter[0]["prerelease"] = true;
+  filter[0]["assets"][0]["name"] = true;
+  filter[0]["assets"][0]["browser_download_url"] = true;
+  filter[0]["assets"][0]["size"] = true;
+  const DeserializationError error = deserializeJson(doc, *client, DeserializationOption::Filter(filter));
+  http.end();
+  if (error) {
+    Serial.printf("[%lu] [OTA] JSON parse failed: %s\n", millis(), error.c_str());
+    return JSON_PARSE_ERROR;
+  }
+
+  if (!doc.is<JsonArray>()) {
+    Serial.printf("[%lu] [OTA] Expected array of releases\n", millis());
+    return JSON_PARSE_ERROR;
+  }
+
+  // Find the latest prerelease with firmware.bin
+  for (JsonVariant release : doc.as<JsonArray>()) {
+    if (!release["prerelease"].as<bool>()) {
+      continue;
+    }
+
+    if (!release["tag_name"].is<std::string>()) {
+      continue;
+    }
+
+    if (!release["assets"].is<JsonArray>()) {
+      continue;
+    }
+
+    for (JsonVariant asset : release["assets"].as<JsonArray>()) {
+      if (asset["name"] == "firmware.bin") {
+        latestVersion = release["tag_name"].as<std::string>();
+        otaUrl = asset["browser_download_url"].as<std::string>();
+        otaSize = asset["size"].as<size_t>();
+        totalSize = otaSize;
+        updateAvailable = true;
+        Serial.printf("[%lu] [OTA] Found prerelease update: %s\n", millis(), latestVersion.c_str());
+        return OK;
+      }
+    }
+  }
+
+  Serial.printf("[%lu] [OTA] No prerelease firmware.bin found\n", millis());
+  return NO_UPDATE;
 }
 
 bool OtaUpdater::isUpdateNewer() const {

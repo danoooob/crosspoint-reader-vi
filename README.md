@@ -3,10 +3,18 @@
 Firmware for the **Xteink X4** e-paper display reader (unaffiliated with Xteink).
 Built using **PlatformIO** and targeting the **ESP32-C3** microcontroller.
 
-CrossPoint Reader is a purpose-built firmware designed to be a drop-in, fully open-source replacement for the official 
+CrossPoint Reader is a purpose-built firmware designed to be a drop-in, fully open-source replacement for the official
 Xteink firmware. It aims to match or improve upon the standard EPUB reading experience.
 
 ![](./docs/images/cover.jpg)
+
+> [!WARNING]
+> **This is a Vietnamese fork of CrossPoint Reader.**
+>
+> - The `master` branch stays close to the upstream version with minimal changes, primarily for Vietnamese language support.
+> - The `dev` branch contains experimental features and customizations. Some code in the dev branch is AI-generated and may not be fully optimized or thoroughly tested.
+> - **Prereleases** are built from the `dev` branch and are intended for testing purposes only.
+> - **Regular users should use the [official releases](https://github.com/danoooob/crosspoint-reader-vi/releases) from the upstream repository** for the most stable experience.
 
 ## Motivation
 
@@ -56,7 +64,7 @@ back to the other partition using the "Swap boot partition" button here https://
 ### Web (specific firmware version)
 
 1. Connect your Xteink X4 to your computer via USB-C
-2. Download the `firmware.bin` file from the release of your choice via the [releases page](https://github.com/daveallie/crosspoint-reader/releases)
+2. Download the `firmware.bin` file from the release of your choice via the [releases page](https://github.com/danoooob/crosspoint-reader-vi/releases)
 3. Go to https://xteink.dve.al/ and flash the firmware file using the "OTA fast flash controls" section
 
 To revert back to the official firmware, you can flash the latest official firmware from https://xteink.dve.al/, or swap
@@ -80,7 +88,7 @@ See [Development](#development) below.
 CrossPoint uses PlatformIO for building and flashing the firmware. To get started, clone the repository:
 
 ```
-git clone --recursive https://github.com/daveallie/crosspoint-reader
+git clone --recursive https://github.com/danoooob/crosspoint-reader-vi -b dev
 
 # Or, if you've already cloned without --recursive:
 git submodule update --init --recursive

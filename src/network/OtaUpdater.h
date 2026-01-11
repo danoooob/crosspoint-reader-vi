@@ -4,11 +4,6 @@
 #include <string>
 
 class OtaUpdater {
-  bool updateAvailable = false;
-  std::string latestVersion;
-  std::string otaUrl;
-  size_t otaSize = 0;
-
  public:
   enum OtaUpdaterError {
     OK = 0,
@@ -19,6 +14,17 @@ class OtaUpdater {
     INTERNAL_UPDATE_ERROR,
     OOM_ERROR,
   };
+
+ private:
+  bool updateAvailable = false;
+  std::string latestVersion;
+  std::string otaUrl;
+  size_t otaSize = 0;
+
+  OtaUpdaterError checkForStableUpdate();
+  OtaUpdaterError checkForPrereleaseUpdate();
+
+ public:
   size_t processedSize = 0;
   size_t totalSize = 0;
 

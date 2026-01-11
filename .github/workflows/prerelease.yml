@@ -1,0 +1,70 @@
+name: Compile Prerelease
+on:
+  workflow_dispatch:
+    inputs:
+      prerelease_tag:
+        description: 'Tag name override (leave empty for auto-generated: v<version>-dev-YYMMDDhhmm)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  build-prerelease:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: ${{ runner.os }}-pio
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Install PlatformIO Core
+        run: pip install --upgrade platformio
+
+      - name: Generate tag name
+        id: tag
+        run: |
+          VERSION=$(grep -oP 'crosspoint_version\s*=\s*\K[0-9.]+' platformio.ini)
+          TIMESTAMP=$(date -u +'%y%m%d%H%M')
+          if [ -n "${{ inputs.prerelease_tag }}" ]; then
+            TAG_NAME="${{ inputs.prerelease_tag }}"
+          else
+            TAG_NAME="v${VERSION}-dev-${TIMESTAMP}"
+          fi
+          echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
+          echo "Generated tag: ${TAG_NAME}"
+
+      - name: Build CrossPoint (dev)
+        run: pio run -e default
+
+      - name: Create Prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag_name }}
+          name: Prerelease ${{ steps.tag.outputs.tag_name }}
+          prerelease: true
+          generate_release_notes: true
+          body: |
+            > [!WARNING]
+            > **This is an experimental prerelease from the `dev` branch.**
+            >
+            > - This build contains experimental features and customizations.
+            > - Some code is AI-generated and may not be fully optimized or thoroughly tested.
+            > - **For regular use, please use the [official releases](https://github.com/danoooob/crosspoint-reader-vi/releases) from the upstream repository.**
+            >
+            > Use at your own risk. This prerelease is intended for testing purposes only.
+
+            ---
+
+          files: |
+            .pio/build/default/firmware.bin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
