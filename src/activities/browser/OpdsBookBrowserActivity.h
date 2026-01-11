@@ -18,12 +18,12 @@
 class OpdsBookBrowserActivity final : public ActivityWithSubactivity {
  public:
   enum class BrowserState {
-    CHECK_WIFI,       // Checking WiFi connection
-    WIFI_SELECTION,   // WiFi selection subactivity is active
-    LOADING,          // Fetching OPDS feed
-    BROWSING,         // Displaying entries (navigation or books)
-    DOWNLOADING,      // Downloading selected EPUB
-    ERROR             // Error state with message
+    CHECK_WIFI,      // Checking WiFi connection
+    WIFI_SELECTION,  // WiFi selection subactivity is active
+    LOADING,         // Fetching OPDS feed
+    BROWSING,        // Displaying entries (navigation or books)
+    DOWNLOADING,     // Downloading selected EPUB
+    ERROR            // Error state with message
   };
 
   explicit OpdsBookBrowserActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,

@@ -430,7 +430,7 @@ unsigned char JpegToBmpConverter::jpegReadCallback(unsigned char* pBuf, const un
 // Core function: Convert JPEG file to 2-bit BMP
 bool JpegToBmpConverter::jpegFileToBmpStream(FsFile& jpegFile, Print& bmpOut, uint16_t maxWidth, uint16_t maxHeight) {
   Serial.printf("[%lu] [JPG] Converting JPEG to BMP (target: %dx%d)\n", millis(), maxWidth, maxHeight);
-  
+
   // Use provided dimensions or fall back to internal defaults
   const int targetMaxWidth = (maxWidth > 0) ? maxWidth : TARGET_MAX_WIDTH;
   const int targetMaxHeight = (maxHeight > 0) ? maxHeight : TARGET_MAX_HEIGHT;

@@ -22,25 +22,25 @@ constexpr int TARGET_MAX_HEIGHT = 800;
 struct PngDecodeContext {
   FsFile* pngFile;
   Print* bmpOut;
-  int srcWidth;             // Original PNG width
-  int srcHeight;            // Original PNG height
-  int outWidth;             // Output BMP width (after scaling)
-  int outHeight;            // Output BMP height (after scaling)
-  uint16_t targetMaxWidth;  // Target max width for scaling
-  uint16_t targetMaxHeight; // Target max height for scaling
-  int currentSrcY;          // Current source row being accumulated
-  int currentOutY;          // Current output row
-  uint32_t* rowAccum;       // Accumulator for each output X (for area averaging)
-  uint16_t* rowCount;       // Count of source pixels accumulated per output X
-  uint8_t* srcRowBuffer;    // Current source row of grayscale pixels
-  int16_t* errorRow0;       // Atkinson dithering error buffers
+  int srcWidth;              // Original PNG width
+  int srcHeight;             // Original PNG height
+  int outWidth;              // Output BMP width (after scaling)
+  int outHeight;             // Output BMP height (after scaling)
+  uint16_t targetMaxWidth;   // Target max width for scaling
+  uint16_t targetMaxHeight;  // Target max height for scaling
+  int currentSrcY;           // Current source row being accumulated
+  int currentOutY;           // Current output row
+  uint32_t* rowAccum;        // Accumulator for each output X (for area averaging)
+  uint16_t* rowCount;        // Count of source pixels accumulated per output X
+  uint8_t* srcRowBuffer;     // Current source row of grayscale pixels
+  int16_t* errorRow0;        // Atkinson dithering error buffers
   int16_t* errorRow1;
   int16_t* errorRow2;
-  uint8_t* bmpRowBuffer;    // BMP output row
+  uint8_t* bmpRowBuffer;  // BMP output row
   int bmpBytesPerRow;
-  uint32_t scaleX_fp;       // Fixed-point scale factor X (16.16)
-  uint32_t scaleY_fp;       // Fixed-point scale factor Y (16.16)
-  uint32_t nextOutY_srcStart; // Source Y where next output row starts (16.16 fixed point)
+  uint32_t scaleX_fp;          // Fixed-point scale factor X (16.16)
+  uint32_t scaleY_fp;          // Fixed-point scale factor Y (16.16)
+  uint32_t nextOutY_srcStart;  // Source Y where next output row starts (16.16 fixed point)
   bool needsScaling;
   bool headerWritten;
   bool error;
@@ -141,10 +141,10 @@ static void writeBmpHeaderHelper(Print& bmpOut, const int width, const int heigh
 // Process a complete output row with Atkinson dithering (after area averaging if scaled)
 static void processOutputRowWithDithering(PngDecodeContext* ctx) {
   const int outWidth = ctx->outWidth;
-  
+
   // Clear BMP row buffer
   memset(ctx->bmpRowBuffer, 0, ctx->bmpBytesPerRow);
-  
+
   // Process each pixel with Atkinson dithering
   for (int x = 0; x < outWidth; x++) {
     // Get grayscale value (from accumulator if scaling, direct if not)
@@ -155,12 +155,12 @@ static void processOutputRowWithDithering(PngDecodeContext* ctx) {
       gray = ctx->srcRowBuffer[x];
     }
     gray = adjustPixel(gray);
-    
+
     // Add accumulated error
     int adjusted = gray + ctx->errorRow0[x + 2];
     if (adjusted < 0) adjusted = 0;
     if (adjusted > 255) adjusted = 255;
-    
+
     // Quantize to 4 levels
     uint8_t quantized;
     int quantizedValue;
@@ -177,7 +177,7 @@ static void processOutputRowWithDithering(PngDecodeContext* ctx) {
       quantized = 3;
       quantizedValue = 255;
     }
-    
+
     // Calculate and distribute error (Atkinson: 6/8 = 75%)
     int error = (adjusted - quantizedValue) >> 3;
     ctx->errorRow0[x + 3] += error;
@@ -186,23 +186,23 @@ static void processOutputRowWithDithering(PngDecodeContext* ctx) {
     ctx->errorRow1[x + 2] += error;
     ctx->errorRow1[x + 3] += error;
     ctx->errorRow2[x + 2] += error;
-    
+
     // Pack into BMP row
     const int byteIndex = (x * 2) / 8;
     const int bitOffset = 6 - ((x * 2) % 8);
     ctx->bmpRowBuffer[byteIndex] |= (quantized << bitOffset);
   }
-  
+
   // Write BMP row
   ctx->bmpOut->write(ctx->bmpRowBuffer, ctx->bmpBytesPerRow);
-  
+
   // Rotate error buffers
   int16_t* temp = ctx->errorRow0;
   ctx->errorRow0 = ctx->errorRow1;
   ctx->errorRow1 = ctx->errorRow2;
   ctx->errorRow2 = temp;
   memset(ctx->errorRow2, 0, (outWidth + 4) * sizeof(int16_t));
-  
+
   // Reset accumulators for next output row (if scaling)
   if (ctx->needsScaling) {
     memset(ctx->rowAccum, 0, outWidth * sizeof(uint32_t));
@@ -211,76 +211,74 @@ static void processOutputRowWithDithering(PngDecodeContext* ctx) {
 }
 
 // pngle callback for each pixel
-static void pngleDrawCallback(pngle_t* pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t h,
-                               const uint8_t rgba[4]) {
+static void pngleDrawCallback(pngle_t* pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint8_t rgba[4]) {
   auto* ctx = static_cast<PngDecodeContext*>(pngle_get_user_data(pngle));
   if (ctx->error) return;
-  
+
   // Write header on first pixel
   if (!ctx->headerWritten) {
     ctx->srcWidth = pngle_get_width(pngle);
     ctx->srcHeight = pngle_get_height(pngle);
-    
+
     // Calculate output dimensions with scaling
     ctx->outWidth = ctx->srcWidth;
     ctx->outHeight = ctx->srcHeight;
     ctx->needsScaling = false;
     ctx->scaleX_fp = 65536;  // 1.0 in 16.16 fixed point
     ctx->scaleY_fp = 65536;
-    
+
     const int targetMaxW = (ctx->targetMaxWidth > 0) ? ctx->targetMaxWidth : TARGET_MAX_WIDTH;
     const int targetMaxH = (ctx->targetMaxHeight > 0) ? ctx->targetMaxHeight : TARGET_MAX_HEIGHT;
-    
+
     if (ctx->srcWidth > targetMaxW || ctx->srcHeight > targetMaxH) {
       const float scaleToFitWidth = static_cast<float>(targetMaxW) / ctx->srcWidth;
       const float scaleToFitHeight = static_cast<float>(targetMaxH) / ctx->srcHeight;
       const float scale = (scaleToFitWidth < scaleToFitHeight) ? scaleToFitWidth : scaleToFitHeight;
-      
+
       ctx->outWidth = static_cast<int>(ctx->srcWidth * scale);
       ctx->outHeight = static_cast<int>(ctx->srcHeight * scale);
       if (ctx->outWidth < 1) ctx->outWidth = 1;
       if (ctx->outHeight < 1) ctx->outHeight = 1;
-      
+
       ctx->scaleX_fp = (static_cast<uint32_t>(ctx->srcWidth) << 16) / ctx->outWidth;
       ctx->scaleY_fp = (static_cast<uint32_t>(ctx->srcHeight) << 16) / ctx->outHeight;
       ctx->needsScaling = true;
-      
-      Serial.printf("[%lu] [PNG] Pre-scaling %dx%d -> %dx%d\n", millis(),
-                    ctx->srcWidth, ctx->srcHeight, ctx->outWidth, ctx->outHeight);
+
+      Serial.printf("[%lu] [PNG] Pre-scaling %dx%d -> %dx%d\n", millis(), ctx->srcWidth, ctx->srcHeight, ctx->outWidth,
+                    ctx->outHeight);
     }
-    
+
     ctx->bmpBytesPerRow = (ctx->outWidth * 2 + 31) / 32 * 4;
-    
+
     // Allocate buffers
     ctx->srcRowBuffer = new uint8_t[ctx->srcWidth]();
     ctx->errorRow0 = new int16_t[ctx->outWidth + 4]();
     ctx->errorRow1 = new int16_t[ctx->outWidth + 4]();
     ctx->errorRow2 = new int16_t[ctx->outWidth + 4]();
     ctx->bmpRowBuffer = new uint8_t[ctx->bmpBytesPerRow]();
-    
+
     if (ctx->needsScaling) {
       ctx->rowAccum = new uint32_t[ctx->outWidth]();
       ctx->rowCount = new uint16_t[ctx->outWidth]();
       ctx->nextOutY_srcStart = ctx->scaleY_fp;  // First boundary
     }
-    
-    if (!ctx->srcRowBuffer || !ctx->errorRow0 || !ctx->errorRow1 ||
-        !ctx->errorRow2 || !ctx->bmpRowBuffer ||
+
+    if (!ctx->srcRowBuffer || !ctx->errorRow0 || !ctx->errorRow1 || !ctx->errorRow2 || !ctx->bmpRowBuffer ||
         (ctx->needsScaling && (!ctx->rowAccum || !ctx->rowCount))) {
       Serial.printf("[%lu] [PNG] Failed to allocate buffers\n", millis());
       ctx->error = true;
       return;
     }
-    
+
     writeBmpHeaderHelper(*ctx->bmpOut, ctx->outWidth, ctx->outHeight);
     ctx->headerWritten = true;
     ctx->currentSrcY = 0;
     ctx->currentOutY = 0;
-    
-    Serial.printf("[%lu] [PNG] Dimensions: %dx%d -> %dx%d\n", millis(),
-                  ctx->srcWidth, ctx->srcHeight, ctx->outWidth, ctx->outHeight);
+
+    Serial.printf("[%lu] [PNG] Dimensions: %dx%d -> %dx%d\n", millis(), ctx->srcWidth, ctx->srcHeight, ctx->outWidth,
+                  ctx->outHeight);
   }
-  
+
   // Convert RGBA to grayscale
   uint8_t gray;
   if (rgba[3] == 0) {
@@ -289,18 +287,18 @@ static void pngleDrawCallback(pngle_t* pngle, uint32_t x, uint32_t y, uint32_t w
   } else {
     // Weighted grayscale conversion
     gray = (rgba[0] * 25 + rgba[1] * 50 + rgba[2] * 25) / 100;
-    
+
     // Alpha blending with white background
     if (rgba[3] < 255) {
       gray = (gray * rgba[3] + 255 * (255 - rgba[3])) / 255;
     }
   }
-  
+
   // Store in source row buffer
   if (x < static_cast<uint32_t>(ctx->srcWidth)) {
     ctx->srcRowBuffer[x] = gray;
   }
-  
+
   // When source row is complete, process it
   if (x == static_cast<uint32_t>(ctx->srcWidth - 1)) {
     if (!ctx->needsScaling) {
@@ -311,7 +309,7 @@ static void pngleDrawCallback(pngle_t* pngle, uint32_t x, uint32_t y, uint32_t w
       for (int outX = 0; outX < ctx->outWidth; outX++) {
         const int srcXStart = (static_cast<uint32_t>(outX) * ctx->scaleX_fp) >> 16;
         const int srcXEnd = (static_cast<uint32_t>(outX + 1) * ctx->scaleX_fp) >> 16;
-        
+
         int sum = 0;
         int count = 0;
         for (int srcX = srcXStart; srcX < srcXEnd && srcX < ctx->srcWidth; srcX++) {
@@ -322,11 +320,11 @@ static void pngleDrawCallback(pngle_t* pngle, uint32_t x, uint32_t y, uint32_t w
           sum = ctx->srcRowBuffer[srcXStart];
           count = 1;
         }
-        
+
         ctx->rowAccum[outX] += sum;
         ctx->rowCount[outX] += count;
       }
-      
+
       // Check if we've crossed into the next output row
       const uint32_t srcY_fp = static_cast<uint32_t>(ctx->currentSrcY + 1) << 16;
       if (srcY_fp >= ctx->nextOutY_srcStart && ctx->currentOutY < ctx->outHeight) {
@@ -335,9 +333,9 @@ static void pngleDrawCallback(pngle_t* pngle, uint32_t x, uint32_t y, uint32_t w
         ctx->nextOutY_srcStart = static_cast<uint32_t>(ctx->currentOutY + 1) * ctx->scaleY_fp;
       }
     }
-    
+
     ctx->currentSrcY++;
-    
+
     // Clear source row buffer for next row
     memset(ctx->srcRowBuffer, 255, ctx->srcWidth);
   }
@@ -346,26 +344,26 @@ static void pngleDrawCallback(pngle_t* pngle, uint32_t x, uint32_t y, uint32_t w
 // pngle init callback
 static void pngleInitCallback(pngle_t* pngle, uint32_t w, uint32_t h) {
   auto* ctx = static_cast<PngDecodeContext*>(pngle_get_user_data(pngle));
-  
+
   // Check size limits
   if (w > TARGET_MAX_WIDTH || h > TARGET_MAX_HEIGHT) {
-    Serial.printf("[%lu] [PNG] Image too large: %dx%d (max %dx%d)\n", millis(), w, h,
-                  TARGET_MAX_WIDTH, TARGET_MAX_HEIGHT);
+    Serial.printf("[%lu] [PNG] Image too large: %dx%d (max %dx%d)\n", millis(), w, h, TARGET_MAX_WIDTH,
+                  TARGET_MAX_HEIGHT);
     // Note: pngle doesn't support scaling, so large images may need to be handled differently
   }
-  
+
   Serial.printf("[%lu] [PNG] Init: %dx%d\n", millis(), w, h);
 }
 
 bool PngToBmpConverter::pngFileToBmpStream(FsFile& pngFile, Print& bmpOut, uint16_t maxWidth, uint16_t maxHeight) {
   Serial.printf("[%lu] [PNG] Converting PNG to BMP (target: %dx%d)\n", millis(), maxWidth, maxHeight);
-  
+
   pngle_t* pngle = pngle_new();
   if (!pngle) {
     Serial.printf("[%lu] [PNG] Failed to create pngle instance\n", millis());
     return false;
   }
-  
+
   PngDecodeContext ctx = {};
   ctx.pngFile = &pngFile;
   ctx.bmpOut = &bmpOut;
@@ -375,17 +373,17 @@ bool PngToBmpConverter::pngFileToBmpStream(FsFile& pngFile, Print& bmpOut, uint1
   ctx.error = false;
   ctx.rowAccum = nullptr;
   ctx.rowCount = nullptr;
-  
+
   pngle_set_user_data(pngle, &ctx);
   pngle_set_init_callback(pngle, pngleInitCallback);
   pngle_set_draw_callback(pngle, pngleDrawCallback);
-  
+
   // Read and feed PNG data to pngle
   uint8_t buffer[256];
   while (pngFile.available() && !ctx.error) {
     const size_t bytesRead = pngFile.read(buffer, sizeof(buffer));
     if (bytesRead == 0) break;
-    
+
     const int fed = pngle_feed(pngle, buffer, bytesRead);
     if (fed < 0) {
       Serial.printf("[%lu] [PNG] Decode error: %s\n", millis(), pngle_error(pngle));
@@ -393,7 +391,7 @@ bool PngToBmpConverter::pngFileToBmpStream(FsFile& pngFile, Print& bmpOut, uint1
       break;
     }
   }
-  
+
   // Cleanup
   delete[] ctx.srcRowBuffer;
   delete[] ctx.errorRow0;
@@ -403,12 +401,12 @@ bool PngToBmpConverter::pngFileToBmpStream(FsFile& pngFile, Print& bmpOut, uint1
   delete[] ctx.rowAccum;
   delete[] ctx.rowCount;
   pngle_destroy(pngle);
-  
+
   if (ctx.error || !ctx.headerWritten) {
     Serial.printf("[%lu] [PNG] Conversion failed\n", millis());
     return false;
   }
-  
+
   Serial.printf("[%lu] [PNG] Conversion complete: %dx%d\n", millis(), ctx.outWidth, ctx.outHeight);
   return true;
 }
