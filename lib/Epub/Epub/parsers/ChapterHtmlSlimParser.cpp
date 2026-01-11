@@ -14,8 +14,11 @@ constexpr int NUM_HEADER_TAGS = sizeof(HEADER_TAGS) / sizeof(HEADER_TAGS[0]);
 // Minimum file size (in bytes) to show progress bar - smaller chapters don't benefit from it
 constexpr size_t MIN_SIZE_FOR_PROGRESS = 50 * 1024;  // 50KB
 
-const char* BLOCK_TAGS[] = {"p", "li", "div", "br", "blockquote"};
+const char* BLOCK_TAGS[] = {"p", "li", "div", "br", "blockquote", "tr"};
 constexpr int NUM_BLOCK_TAGS = sizeof(BLOCK_TAGS) / sizeof(BLOCK_TAGS[0]);
+
+const char* TABLE_CELL_TAGS[] = {"td", "th"};
+constexpr int NUM_TABLE_CELL_TAGS = sizeof(TABLE_CELL_TAGS) / sizeof(TABLE_CELL_TAGS[0]);
 
 const char* BOLD_TAGS[] = {"b", "strong"};
 constexpr int NUM_BOLD_TAGS = sizeof(BOLD_TAGS) / sizeof(BOLD_TAGS[0]);
@@ -26,7 +29,7 @@ constexpr int NUM_ITALIC_TAGS = sizeof(ITALIC_TAGS) / sizeof(ITALIC_TAGS[0]);
 const char* IMAGE_TAGS[] = {"img"};
 constexpr int NUM_IMAGE_TAGS = sizeof(IMAGE_TAGS) / sizeof(IMAGE_TAGS[0]);
 
-const char* SKIP_TAGS[] = {"head", "table"};
+const char* SKIP_TAGS[] = {"head"};
 constexpr int NUM_SKIP_TAGS = sizeof(SKIP_TAGS) / sizeof(SKIP_TAGS[0]);
 
 bool isWhitespace(const char c) { return c == ' ' || c == '\r' || c == '\n' || c == '\t'; }
@@ -96,6 +99,11 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
   } else if (matches(name, BLOCK_TAGS, NUM_BLOCK_TAGS)) {
     if (strcmp(name, "br") == 0) {
       self->startNewTextBlock(self->currentTextBlock->getStyle());
+    } else if (strcmp(name, "tr") == 0) {
+      // Table row: start new block and add bullet prefix
+      self->startNewTextBlock((TextBlock::Style)self->paragraphAlignment);
+      self->currentTextBlock->addWord("\xE2\x96\xB8", EpdFontFamily::REGULAR);  // ▸ (black right-pointing small triangle)
+      self->isFirstCellInRow = true;  // Reset for new row
     } else {
       self->startNewTextBlock((TextBlock::Style)self->paragraphAlignment);
     }
@@ -103,6 +111,19 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     self->boldUntilDepth = std::min(self->boldUntilDepth, self->depth);
   } else if (matches(name, ITALIC_TAGS, NUM_ITALIC_TAGS)) {
     self->italicUntilDepth = std::min(self->italicUntilDepth, self->depth);
+  } else if (strcmp(name, "td") == 0) {
+    // Table data cell: add separator before cell (except first cell)
+    if (!self->isFirstCellInRow) {
+      self->currentTextBlock->addWord("\xC2\xB7", EpdFontFamily::REGULAR);  // · (middle dot)
+    }
+    self->isFirstCellInRow = false;
+  } else if (strcmp(name, "th") == 0) {
+    // Table header cell: add separator before cell (except first cell), and make bold
+    if (!self->isFirstCellInRow) {
+      self->currentTextBlock->addWord("\xC2\xB7", EpdFontFamily::BOLD);  // · (middle dot, bold to match header)
+    }
+    self->isFirstCellInRow = false;
+    self->boldUntilDepth = std::min(self->boldUntilDepth, self->depth);
   }
 
   self->depth += 1;
@@ -184,7 +205,8 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
     // text styling needs to be overhauled to fix it.
     const bool shouldBreakText =
         matches(name, BLOCK_TAGS, NUM_BLOCK_TAGS) || matches(name, HEADER_TAGS, NUM_HEADER_TAGS) ||
-        matches(name, BOLD_TAGS, NUM_BOLD_TAGS) || matches(name, ITALIC_TAGS, NUM_ITALIC_TAGS) || self->depth == 1;
+        matches(name, BOLD_TAGS, NUM_BOLD_TAGS) || matches(name, ITALIC_TAGS, NUM_ITALIC_TAGS) ||
+        matches(name, TABLE_CELL_TAGS, NUM_TABLE_CELL_TAGS) || self->depth == 1;
 
     if (shouldBreakText) {
       EpdFontFamily::Style fontStyle = EpdFontFamily::REGULAR;
@@ -199,6 +221,13 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
       self->partWordBuffer[self->partWordBufferIndex] = '\0';
       self->currentTextBlock->addWord(self->partWordBuffer, fontStyle);
       self->partWordBufferIndex = 0;
+    }
+  }
+
+  // Reset bold styling at end of header cell
+  if (strcmp(name, "th") == 0) {
+    if (self->boldUntilDepth == self->depth - 1) {
+      self->boldUntilDepth = INT_MAX;
     }
   }
 
