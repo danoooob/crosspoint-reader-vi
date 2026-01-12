@@ -32,7 +32,7 @@ jobs:
       - name: Generate tag name
         id: tag
         run: |
-          VERSION=$(grep -oP 'crosspoint_version\s*=\s*\K[0-9.]+' platformio.ini)
+          VERSION=$(grep -A1 '\[crosspoint\]' platformio.ini | grep -oP 'version\s*=\s*\K[0-9.]+')
           TIMESTAMP=$(date -u +'%y%m%d%H%M')
           if [ -n "${{ inputs.prerelease_tag }}" ]; then
             TAG_NAME="${{ inputs.prerelease_tag }}"
