@@ -425,7 +425,6 @@ void OpdsBookBrowserActivity::downloadBook(const OpdsEntry& book) {
 void OpdsBookBrowserActivity::checkAndConnectWifi() {
   // Already connected? Verify connection is valid by checking IP
   if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0, 0, 0, 0)) {
-    Serial.printf("[%lu] [OPDS] Already connected to WiFi: %s\n", millis(), WiFi.localIP().toString().c_str());
     state = BrowserState::LOADING;
     statusMessage = "Loading...";
     updateRequired = true;
@@ -434,7 +433,6 @@ void OpdsBookBrowserActivity::checkAndConnectWifi() {
   }
 
   // Not connected - launch WiFi selection screen directly
-  Serial.printf("[%lu] [OPDS] WiFi not connected, launching WiFi selection\n", millis());
   launchWifiSelection();
 }
 
