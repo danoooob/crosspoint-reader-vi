@@ -8,6 +8,14 @@ Xteink firmware. It aims to match or improve upon the standard EPUB reading expe
 
 ![](./docs/images/cover.jpg)
 
+> [!WARNING]
+> **This is a Vietnamese fork of CrossPoint Reader.**
+>
+> - The `master` branch stays close to the upstream version with minimal changes, primarily for Vietnamese language support.
+> - The `dev` branch contains experimental features and customizations. Some code in the dev branch is AI-generated and may not be fully optimized or thoroughly tested.
+> - **Prereleases** are built from the `dev` branch and are intended for testing purposes only.
+> - **Regular users should use the [official releases](https://github.com/danoooob/crosspoint-reader-vi/releases) from the upstream repository** for the most stable experience.
+
 ## Motivation
 
 E-paper devices are fantastic for reading, but most commercially available readers are closed systems with limited 
