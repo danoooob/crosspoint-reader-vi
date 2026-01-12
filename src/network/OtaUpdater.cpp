@@ -149,18 +149,31 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForPrereleaseUpdate() {
 }
 
 bool OtaUpdater::isUpdateNewer() const {
-  if (!updateAvailable || latestVersion.empty() || latestVersion == CROSSPOINT_VERSION) {
+  if (!updateAvailable || latestVersion.empty()) {
     return false;
   }
 
-  int currentMajor, currentMinor, currentPatch;
-  int latestMajor, latestMinor, latestPatch;
+  const std::string currentVersion = CROSSPOINT_VERSION;
 
-  const auto currentVersion = CROSSPOINT_VERSION;
+  // If versions are exactly the same, no update needed
+  if (latestVersion == currentVersion) {
+    return false;
+  }
 
-  // semantic version check (only match on 3 segments)
+  // For dev versions, compare the full version string including timestamp
+  // Format: <version>-<branch>-<YYMMDDhhmm> (e.g., 0.13.1-dev-2601131015)
+  if (isDevVersion()) {
+    // For prerelease updates, if the tag is different, consider it newer
+    // The timestamp at the end ensures newer prereleases have "larger" strings
+    return latestVersion > currentVersion;
+  }
+
+  // For stable versions, use semantic version comparison
+  int currentMajor = 0, currentMinor = 0, currentPatch = 0;
+  int latestMajor = 0, latestMinor = 0, latestPatch = 0;
+
   sscanf(latestVersion.c_str(), "%d.%d.%d", &latestMajor, &latestMinor, &latestPatch);
-  sscanf(currentVersion, "%d.%d.%d", &currentMajor, &currentMinor, &currentPatch);
+  sscanf(currentVersion.c_str(), "%d.%d.%d", &currentMajor, &currentMinor, &currentPatch);
 
   /*
    * Compare major versions.
