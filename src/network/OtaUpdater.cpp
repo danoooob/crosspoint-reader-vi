@@ -6,7 +6,8 @@
 
 namespace {
 constexpr char latestReleaseUrl[] = "https://api.github.com/repos/danoooob/crosspoint-reader-vi/releases/latest";
-constexpr char allReleasesUrl[] = "https://api.github.com/repos/danoooob/crosspoint-reader-vi/releases";
+// Limit to 10 releases to reduce memory usage on ESP32
+constexpr char allReleasesUrl[] = "https://api.github.com/repos/danoooob/crosspoint-reader-vi/releases?per_page=10";
 
 bool isDevVersion() {
   const std::string version = CROSSPOINT_VERSION;
@@ -84,12 +85,14 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForStableUpdate() {
 OtaUpdater::OtaUpdaterError OtaUpdater::checkForPrereleaseUpdate() {
   const std::unique_ptr<WiFiClientSecure> client(new WiFiClientSecure);
   client->setInsecure();
+  client->setTimeout(30000);  // 30 second timeout
   HTTPClient http;
 
   Serial.printf("[%lu] [OTA] Fetching prereleases: %s\n", millis(), allReleasesUrl);
 
   http.begin(*client, allReleasesUrl);
   http.addHeader("User-Agent", "CrossPoint-ESP32-" CROSSPOINT_VERSION);
+  http.setTimeout(30000);  // 30 second timeout
 
   const int httpCode = http.GET();
   if (httpCode != HTTP_CODE_OK) {
@@ -98,6 +101,10 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForPrereleaseUpdate() {
     return HTTP_ERROR;
   }
 
+  // Read entire response into string first to avoid stream timeout issues
+  const String payload = http.getString();
+  http.end();
+
   JsonDocument doc;
   JsonDocument filter;
   filter[0]["tag_name"] = true;
@@ -105,8 +112,8 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForPrereleaseUpdate() {
   filter[0]["assets"][0]["name"] = true;
   filter[0]["assets"][0]["browser_download_url"] = true;
   filter[0]["assets"][0]["size"] = true;
-  const DeserializationError error = deserializeJson(doc, *client, DeserializationOption::Filter(filter));
-  http.end();
+  const DeserializationError error = deserializeJson(doc, payload, DeserializationOption::Filter(filter));
+
   if (error) {
     Serial.printf("[%lu] [OTA] JSON parse failed: %s\n", millis(), error.c_str());
     return JSON_PARSE_ERROR;
@@ -117,13 +124,16 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForPrereleaseUpdate() {
     return JSON_PARSE_ERROR;
   }
 
-  // Find the latest prerelease with firmware.bin
+  // Find the latest prerelease with "-dev-" in tag name and firmware.bin asset
   for (JsonVariant release : doc.as<JsonArray>()) {
     if (!release["prerelease"].as<bool>()) {
       continue;
     }
 
-    if (!release["tag_name"].is<std::string>()) {
+    const std::string tagName = release["tag_name"].as<std::string>();
+
+    // Must have "-dev-" in tag name
+    if (tagName.find("-dev-") == std::string::npos) {
       continue;
     }
 
@@ -133,18 +143,19 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForPrereleaseUpdate() {
 
     for (JsonVariant asset : release["assets"].as<JsonArray>()) {
       if (asset["name"] == "firmware.bin") {
-        latestVersion = release["tag_name"].as<std::string>();
+        latestVersion = tagName;
         otaUrl = asset["browser_download_url"].as<std::string>();
         otaSize = asset["size"].as<size_t>();
         totalSize = otaSize;
         updateAvailable = true;
-        Serial.printf("[%lu] [OTA] Found prerelease update: %s\n", millis(), latestVersion.c_str());
+        Serial.printf("[%lu] [OTA] Found prerelease update: %s (size: %u, url: %s)\n", millis(), latestVersion.c_str(),
+                      otaSize, otaUrl.c_str());
         return OK;
       }
     }
   }
 
-  Serial.printf("[%lu] [OTA] No prerelease firmware.bin found\n", millis());
+  Serial.printf("[%lu] [OTA] No prerelease with firmware.bin found\n", millis());
   return NO_UPDATE;
 }
 
@@ -160,11 +171,28 @@ bool OtaUpdater::isUpdateNewer() const {
     return false;
   }
 
-  // For dev versions, compare the full version string including timestamp
-  // Format: <version>-<branch>-<YYMMDDhhmm> (e.g., 0.13.1-dev-2601131015)
+  // For dev versions, compare using the timestamp suffix
+  // Format: <version>-dev-<YYMMDDhhmm> (e.g., 0.13.1-dev-2512312259)
   if (isDevVersion()) {
-    // For prerelease updates, if the tag is different, consider it newer
-    // The timestamp at the end ensures newer prereleases have "larger" strings
+    // Extract the base version and timestamp from both versions
+
+    // Find the last hyphen to extract the timestamp
+    const auto currentLastHyphen = currentVersion.rfind('-');
+    const auto latestLastHyphen = latestVersion.rfind('-');
+
+    if (currentLastHyphen != std::string::npos && latestLastHyphen != std::string::npos) {
+      const std::string currentTimestamp = currentVersion.substr(currentLastHyphen + 1);
+      const std::string latestTimestamp = latestVersion.substr(latestLastHyphen + 1);
+
+      // Convert to numbers for proper numeric comparison
+      // This handles different timestamp lengths correctly
+      const unsigned long long currentTs = strtoull(currentTimestamp.c_str(), nullptr, 10);
+      const unsigned long long latestTs = strtoull(latestTimestamp.c_str(), nullptr, 10);
+
+      return latestTs > currentTs;
+    }
+
+    // Fallback to string comparison if we can't parse timestamps
     return latestVersion > currentVersion;
   }
 
