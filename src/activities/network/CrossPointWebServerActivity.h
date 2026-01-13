@@ -51,6 +51,10 @@ class CrossPointWebServerActivity final : public ActivityWithSubactivity {
   // Performance monitoring
   unsigned long lastHandleClientTime = 0;
 
+  // WiFi connection monitoring (STA mode only)
+  unsigned long lastWifiDisconnectTime = 0;
+  int wifiDisconnectCount = 0;
+
   static void taskTrampoline(void* param);
   [[noreturn]] void displayTaskLoop();
   void render() const;

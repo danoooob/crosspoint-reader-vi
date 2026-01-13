@@ -45,6 +45,8 @@ void CrossPointWebServerActivity::onEnter() {
   connectedIP.clear();
   connectedSSID.clear();
   lastHandleClientTime = 0;
+  lastWifiDisconnectTime = 0;
+  wifiDisconnectCount = 0;
   updateRequired = true;
 
   xTaskCreate(&CrossPointWebServerActivity::taskTrampoline, "WebServerActivityTask",
@@ -278,6 +280,46 @@ void CrossPointWebServerActivity::loop() {
 
   // Handle different states
   if (state == WebServerActivityState::SERVER_RUNNING) {
+    // Check WiFi connection status for STA mode
+    // In AP mode, we don't need to check - we ARE the network
+    if (!isApMode) {
+      const wl_status_t wifiStatus = WiFi.status();
+      if (wifiStatus != WL_CONNECTED) {
+        // WiFi disconnected unexpectedly
+        const unsigned long now = millis();
+
+        if (now - lastWifiDisconnectTime > 1000) {
+          wifiDisconnectCount++;
+          Serial.printf("[%lu] [WEBACT] WARNING: WiFi disconnected (status=%d, count=%d)\n", now, wifiStatus,
+                        wifiDisconnectCount);
+          lastWifiDisconnectTime = now;
+
+          // After 5 seconds of disconnection, give up and go back
+          if (wifiDisconnectCount >= 5) {
+            Serial.printf("[%lu] [WEBACT] WiFi disconnected for too long, returning to menu\n", now);
+            wifiDisconnectCount = 0;
+            onGoBack();
+            return;
+          }
+        }
+
+        // Don't process web requests while disconnected
+        // Just yield to let the WiFi stack try to reconnect
+        yield();
+
+        // Handle exit on Back button even while disconnected
+        if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+          wifiDisconnectCount = 0;
+          onGoBack();
+          return;
+        }
+        return;
+      } else {
+        // Reset disconnect counter when connected
+        wifiDisconnectCount = 0;
+      }
+    }
+
     // Handle DNS requests for captive portal (AP mode only)
     if (isApMode && dnsServer) {
       dnsServer->processNextRequest();
