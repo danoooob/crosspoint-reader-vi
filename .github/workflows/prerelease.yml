@@ -43,6 +43,16 @@ jobs:
           echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
           echo "release_name=v${TAG_NAME}" >> $GITHUB_OUTPUT
           echo "Generated tag: ${TAG_NAME}"
+          
+          # Find previous prerelease tag from this branch for changelog
+          PREV_TAG=$(git tag --list "*-${BRANCH}-*" --sort=-version:refname | head -n 1)
+          if [ -n "$PREV_TAG" ]; then
+            echo "prev_tag=${PREV_TAG}" >> $GITHUB_OUTPUT
+            echo "Previous prerelease tag: ${PREV_TAG}"
+          else
+            echo "prev_tag=" >> $GITHUB_OUTPUT
+            echo "No previous prerelease tag found"
+          fi
 
       - name: Build CrossPoint (prerelease)
         run: pio run -e gh_prerelease
@@ -55,7 +65,7 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag_name }}
           name: Prerelease ${{ steps.tag.outputs.release_name }}
           prerelease: true
-          generate_release_notes: true
+          generate_release_notes: false
           body: |
             > [!WARNING]
             > **This is an experimental prerelease from the `${{ github.ref_name }}` branch.**
@@ -67,6 +77,8 @@ jobs:
             > Use at your own risk. This prerelease is intended for testing purposes only.
 
             ---
+            
+            **Full Changelog**: ${{ steps.tag.outputs.prev_tag != '' && format('https://github.com/{0}/compare/{1}...{2}', github.repository, steps.tag.outputs.prev_tag, steps.tag.outputs.tag_name) || format('https://github.com/{0}/commits/{1}', github.repository, github.ref_name) }}
 
           files: |
             .pio/build/gh_prerelease/firmware.bin
