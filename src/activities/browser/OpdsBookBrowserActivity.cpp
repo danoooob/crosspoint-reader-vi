@@ -230,16 +230,14 @@ void OpdsBookBrowserActivity::render() const {
   const int maxTextWidth = renderer.getScreenWidth() - 40;
 
   // Build display text for selected item to check if it needs 2 lines
+  const auto& selectedEntry = entries[selectorIndex];
   std::string selectedDisplayText;
-  if (!entries.empty()) {
-    const auto& selectedEntry = entries[selectorIndex];
-    if (selectedEntry.type == OpdsEntryType::NAVIGATION) {
-      selectedDisplayText = "> " + selectedEntry.title;
-    } else {
-      selectedDisplayText = selectedEntry.title;
-      if (!selectedEntry.author.empty()) {
-        selectedDisplayText += " - " + selectedEntry.author;
-      }
+  if (selectedEntry.type == OpdsEntryType::NAVIGATION) {
+    selectedDisplayText = "> " + selectedEntry.title;
+  } else {
+    selectedDisplayText = selectedEntry.title;
+    if (!selectedEntry.author.empty()) {
+      selectedDisplayText += " - " + selectedEntry.author;
     }
   }
 

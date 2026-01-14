@@ -205,8 +205,8 @@ bool JpegToBmpConverter::jpegFileToBmpStreamInternal(FsFile& jpegFile, Print& bm
                 targetWidth, targetHeight);
 
   // Use provided dimensions or fall back to internal defaults
-  const int targetMaxWidth = (maxWidth > 0) ? maxWidth : TARGET_MAX_WIDTH;
-  const int targetMaxHeight = (maxHeight > 0) ? maxHeight : TARGET_MAX_HEIGHT;
+  const int targetMaxWidth = (targetWidth > 0) ? targetWidth : TARGET_MAX_WIDTH;
+  const int targetMaxHeight = (targetHeight > 0) ? targetHeight : TARGET_MAX_HEIGHT;
 
   // Setup context for picojpeg callback
   JpegReadContext context = {.file = jpegFile, .bufferPos = 0, .bufferFilled = 0};
@@ -243,7 +243,6 @@ bool JpegToBmpConverter::jpegFileToBmpStreamInternal(FsFile& jpegFile, Print& bm
 
   if (USE_PRESCALE && (imageInfo.m_width > targetMaxWidth || imageInfo.m_height > targetMaxHeight)) {
     // Calculate scale to fit within target dimensions while maintaining aspect ratio
-    const float scale = (scaleToFitWidth > scaleToFitHeight) ? scaleToFitWidth : scaleToFitHeight;
     const float scaleToFitWidth = static_cast<float>(targetMaxWidth) / imageInfo.m_width;
     const float scaleToFitHeight = static_cast<float>(targetMaxHeight) / imageInfo.m_height;
     // Use smaller scale to ensure image fits within both constraints
@@ -553,9 +552,9 @@ bool JpegToBmpConverter::jpegFileToBmpStreamInternal(FsFile& jpegFile, Print& bm
   return true;
 }
 
-// Core function: Convert JPEG file to 2-bit BMP (uses default target size)
-bool JpegToBmpConverter::jpegFileToBmpStream(FsFile& jpegFile, Print& bmpOut) {
-  return jpegFileToBmpStreamInternal(jpegFile, bmpOut, TARGET_MAX_WIDTH, TARGET_MAX_HEIGHT, false);
+// Core function: Convert JPEG file to 2-bit BMP, optionally scaling to fit maxWidth x maxHeight
+bool JpegToBmpConverter::jpegFileToBmpStream(FsFile& jpegFile, Print& bmpOut, uint16_t maxWidth, uint16_t maxHeight) {
+  return jpegFileToBmpStreamInternal(jpegFile, bmpOut, maxWidth, maxHeight, false);
 }
 
 // Convert with custom target size (for thumbnails, 2-bit)
