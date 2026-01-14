@@ -87,8 +87,47 @@ void writeBmpHeader8bit(Print& bmpOut, const int width, const int height) {
   }
 }
 
+// Helper function: Write BMP header with 1-bit color depth (black and white)
+static void writeBmpHeader1bit(Print& bmpOut, const int width, const int height) {
+  // Calculate row padding (each row must be multiple of 4 bytes)
+  const int bytesPerRow = (width + 31) / 32 * 4;  // 1 bit per pixel, round up to 4-byte boundary
+  const int imageSize = bytesPerRow * height;
+  const uint32_t fileSize = 62 + imageSize;  // 14 (file header) + 40 (DIB header) + 8 (palette) + image
+
+  // BMP File Header (14 bytes)
+  bmpOut.write('B');
+  bmpOut.write('M');
+  write32(bmpOut, fileSize);  // File size
+  write32(bmpOut, 0);         // Reserved
+  write32(bmpOut, 62);        // Offset to pixel data (14 + 40 + 8)
+
+  // DIB Header (BITMAPINFOHEADER - 40 bytes)
+  write32(bmpOut, 40);
+  write32Signed(bmpOut, width);
+  write32Signed(bmpOut, -height);  // Negative height = top-down bitmap
+  write16(bmpOut, 1);              // Color planes
+  write16(bmpOut, 1);              // Bits per pixel (1 bit)
+  write32(bmpOut, 0);              // BI_RGB (no compression)
+  write32(bmpOut, imageSize);
+  write32(bmpOut, 2835);  // xPixelsPerMeter (72 DPI)
+  write32(bmpOut, 2835);  // yPixelsPerMeter (72 DPI)
+  write32(bmpOut, 2);     // colorsUsed
+  write32(bmpOut, 2);     // colorsImportant
+
+  // Color Palette (2 colors x 4 bytes = 8 bytes)
+  // Format: Blue, Green, Red, Reserved (BGRA)
+  // Note: In 1-bit BMP, palette index 0 = black, 1 = white
+  uint8_t palette[8] = {
+      0x00, 0x00, 0x00, 0x00,  // Color 0: Black
+      0xFF, 0xFF, 0xFF, 0x00   // Color 1: White
+  };
+  for (const uint8_t i : palette) {
+    bmpOut.write(i);
+  }
+}
+
 // Helper function: Write BMP header with 2-bit color depth
-void JpegToBmpConverter::writeBmpHeader(Print& bmpOut, const int width, const int height) {
+static void writeBmpHeader2bit(Print& bmpOut, const int width, const int height) {
   // Calculate row padding (each row must be multiple of 4 bytes)
   const int bytesPerRow = (width * 2 + 31) / 32 * 4;  // 2 bits per pixel, round up
   const int imageSize = bytesPerRow * height;
@@ -159,9 +198,11 @@ unsigned char JpegToBmpConverter::jpegReadCallback(unsigned char* pBuf, const un
   return 0;  // Success
 }
 
-// Core function: Convert JPEG file to 2-bit BMP
-bool JpegToBmpConverter::jpegFileToBmpStream(FsFile& jpegFile, Print& bmpOut, uint16_t maxWidth, uint16_t maxHeight) {
-  Serial.printf("[%lu] [JPG] Converting JPEG to BMP (target: %dx%d)\n", millis(), maxWidth, maxHeight);
+// Internal implementation with configurable target size and bit depth
+bool JpegToBmpConverter::jpegFileToBmpStreamInternal(FsFile& jpegFile, Print& bmpOut, int targetWidth, int targetHeight,
+                                                     bool oneBit) {
+  Serial.printf("[%lu] [JPG] Converting JPEG to %s BMP (target: %dx%d)\n", millis(), oneBit ? "1-bit" : "2-bit",
+                targetWidth, targetHeight);
 
   // Use provided dimensions or fall back to internal defaults
   const int targetMaxWidth = (maxWidth > 0) ? maxWidth : TARGET_MAX_WIDTH;
@@ -202,6 +243,7 @@ bool JpegToBmpConverter::jpegFileToBmpStream(FsFile& jpegFile, Print& bmpOut, ui
 
   if (USE_PRESCALE && (imageInfo.m_width > targetMaxWidth || imageInfo.m_height > targetMaxHeight)) {
     // Calculate scale to fit within target dimensions while maintaining aspect ratio
+    const float scale = (scaleToFitWidth > scaleToFitHeight) ? scaleToFitWidth : scaleToFitHeight;
     const float scaleToFitWidth = static_cast<float>(targetMaxWidth) / imageInfo.m_width;
     const float scaleToFitHeight = static_cast<float>(targetMaxHeight) / imageInfo.m_height;
     // Use smaller scale to ensure image fits within both constraints
@@ -226,11 +268,14 @@ bool JpegToBmpConverter::jpegFileToBmpStream(FsFile& jpegFile, Print& bmpOut, ui
 
   // Write BMP header with output dimensions
   int bytesPerRow;
-  if (USE_8BIT_OUTPUT) {
+  if (USE_8BIT_OUTPUT && !oneBit) {
     writeBmpHeader8bit(bmpOut, outWidth, outHeight);
     bytesPerRow = (outWidth + 3) / 4 * 4;
+  } else if (oneBit) {
+    writeBmpHeader1bit(bmpOut, outWidth, outHeight);
+    bytesPerRow = (outWidth + 31) / 32 * 4;  // 1 bit per pixel
   } else {
-    writeBmpHeader(bmpOut, outWidth, outHeight);
+    writeBmpHeader2bit(bmpOut, outWidth, outHeight);
     bytesPerRow = (outWidth * 2 + 31) / 32 * 4;
   }
 
@@ -261,11 +306,16 @@ bool JpegToBmpConverter::jpegFileToBmpStream(FsFile& jpegFile, Print& bmpOut, ui
     return false;
   }
 
-  // Create ditherer if enabled (only for 2-bit output)
+  // Create ditherer if enabled
   // Use OUTPUT dimensions for dithering (after prescaling)
   AtkinsonDitherer* atkinsonDitherer = nullptr;
   FloydSteinbergDitherer* fsDitherer = nullptr;
-  if (!USE_8BIT_OUTPUT) {
+  Atkinson1BitDitherer* atkinson1BitDitherer = nullptr;
+
+  if (oneBit) {
+    // For 1-bit output, use Atkinson dithering for better quality
+    atkinson1BitDitherer = new Atkinson1BitDitherer(outWidth);
+  } else if (!USE_8BIT_OUTPUT) {
     if (USE_ATKINSON) {
       atkinsonDitherer = new AtkinsonDitherer(outWidth);
     } else if (USE_FLOYD_STEINBERG) {
@@ -351,12 +401,25 @@ bool JpegToBmpConverter::jpegFileToBmpStream(FsFile& jpegFile, Print& bmpOut, ui
         // No scaling - direct output (1:1 mapping)
         memset(rowBuffer, 0, bytesPerRow);
 
-        if (USE_8BIT_OUTPUT) {
+        if (USE_8BIT_OUTPUT && !oneBit) {
           for (int x = 0; x < outWidth; x++) {
             const uint8_t gray = mcuRowBuffer[bufferY * imageInfo.m_width + x];
             rowBuffer[x] = adjustPixel(gray);
           }
+        } else if (oneBit) {
+          // 1-bit output with Atkinson dithering for better quality
+          for (int x = 0; x < outWidth; x++) {
+            const uint8_t gray = mcuRowBuffer[bufferY * imageInfo.m_width + x];
+            const uint8_t bit =
+                atkinson1BitDitherer ? atkinson1BitDitherer->processPixel(gray, x) : quantize1bit(gray, x, y);
+            // Pack 1-bit value: MSB first, 8 pixels per byte
+            const int byteIndex = x / 8;
+            const int bitOffset = 7 - (x % 8);
+            rowBuffer[byteIndex] |= (bit << bitOffset);
+          }
+          if (atkinson1BitDitherer) atkinson1BitDitherer->nextRow();
         } else {
+          // 2-bit output
           for (int x = 0; x < outWidth; x++) {
             const uint8_t gray = adjustPixel(mcuRowBuffer[bufferY * imageInfo.m_width + x]);
             uint8_t twoBit;
@@ -414,12 +477,25 @@ bool JpegToBmpConverter::jpegFileToBmpStream(FsFile& jpegFile, Print& bmpOut, ui
         if (srcY_fp >= nextOutY_srcStart && currentOutY < outHeight) {
           memset(rowBuffer, 0, bytesPerRow);
 
-          if (USE_8BIT_OUTPUT) {
+          if (USE_8BIT_OUTPUT && !oneBit) {
             for (int x = 0; x < outWidth; x++) {
               const uint8_t gray = (rowCount[x] > 0) ? (rowAccum[x] / rowCount[x]) : 0;
               rowBuffer[x] = adjustPixel(gray);
             }
+          } else if (oneBit) {
+            // 1-bit output with Atkinson dithering for better quality
+            for (int x = 0; x < outWidth; x++) {
+              const uint8_t gray = (rowCount[x] > 0) ? (rowAccum[x] / rowCount[x]) : 0;
+              const uint8_t bit = atkinson1BitDitherer ? atkinson1BitDitherer->processPixel(gray, x)
+                                                       : quantize1bit(gray, x, currentOutY);
+              // Pack 1-bit value: MSB first, 8 pixels per byte
+              const int byteIndex = x / 8;
+              const int bitOffset = 7 - (x % 8);
+              rowBuffer[byteIndex] |= (bit << bitOffset);
+            }
+            if (atkinson1BitDitherer) atkinson1BitDitherer->nextRow();
           } else {
+            // 2-bit output
             for (int x = 0; x < outWidth; x++) {
               const uint8_t gray = adjustPixel((rowCount[x] > 0) ? (rowAccum[x] / rowCount[x]) : 0);
               uint8_t twoBit;
@@ -467,9 +543,29 @@ bool JpegToBmpConverter::jpegFileToBmpStream(FsFile& jpegFile, Print& bmpOut, ui
   if (fsDitherer) {
     delete fsDitherer;
   }
+  if (atkinson1BitDitherer) {
+    delete atkinson1BitDitherer;
+  }
   free(mcuRowBuffer);
   free(rowBuffer);
 
   Serial.printf("[%lu] [JPG] Successfully converted JPEG to BMP\n", millis());
   return true;
+}
+
+// Core function: Convert JPEG file to 2-bit BMP (uses default target size)
+bool JpegToBmpConverter::jpegFileToBmpStream(FsFile& jpegFile, Print& bmpOut) {
+  return jpegFileToBmpStreamInternal(jpegFile, bmpOut, TARGET_MAX_WIDTH, TARGET_MAX_HEIGHT, false);
+}
+
+// Convert with custom target size (for thumbnails, 2-bit)
+bool JpegToBmpConverter::jpegFileToBmpStreamWithSize(FsFile& jpegFile, Print& bmpOut, int targetMaxWidth,
+                                                     int targetMaxHeight) {
+  return jpegFileToBmpStreamInternal(jpegFile, bmpOut, targetMaxWidth, targetMaxHeight, false);
+}
+
+// Convert to 1-bit BMP (black and white only, no grays) for fast home screen rendering
+bool JpegToBmpConverter::jpegFileTo1BitBmpStreamWithSize(FsFile& jpegFile, Print& bmpOut, int targetMaxWidth,
+                                                         int targetMaxHeight) {
+  return jpegFileToBmpStreamInternal(jpegFile, bmpOut, targetMaxWidth, targetMaxHeight, true);
 }
