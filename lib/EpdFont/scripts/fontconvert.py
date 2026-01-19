@@ -23,90 +23,75 @@ is2Bit = args.is2Bit
 size = args.size
 font_name = args.name
 
-# inclusive unicode code point intervals
-# must not overlap and be in ascending order
+# Inclusive unicode code point intervals
+# Must not overlap and be in ascending order
+# Optimized for Vietnamese + English ebook reading with common symbols
 intervals = [
     ### Basic Latin ###
-    # ASCII letters, digits, punctuation, control characters
+    # ASCII: letters, digits, punctuation, $ sign (U+0024)
     (0x0000, 0x007F),
+
     ### Latin-1 Supplement ###
-    # Accented characters for Western European languages
+    # Western European accents, ×÷±°²³½¼¾, £¥¢ currency, ©®
     (0x0080, 0x00FF),
+
     ### Latin Extended-A ###
-    # Eastern European and Baltic languages
+    # Eastern European + Vietnamese Đ/đ (U+0110-0111), Ă/ă
     (0x0100, 0x017F),
-    ### Latin Extended-B ###
-    # Additional Eastern European characters
-    (0x0180, 0x024F),
+
+    ### Latin Extended-B (Vietnamese subset only) ###
+    # Only Ơ/ơ (U+01A0-01A1), Ư/ư (U+01AF-01B0) for Vietnamese
+    (0x01A0, 0x01B0),
+
+    ### Combining Diacritical Marks (Vietnamese essential) ###
+    # Grave, Acute, Circumflex, Tilde (U+0300-0303)
+    (0x0300, 0x0303),
+    # Hook Above - Vietnamese hỏi tone (U+0309)
+    (0x0309, 0x0309),
+    # Dot Below - Vietnamese nặng tone (U+0323)
+    (0x0323, 0x0323),
+
+    ### Greek (common letters only) ###
+    # Uppercase Α-Ω: used in math, science, physics (α, β, π, Δ, Σ, Ω, etc.)
+    (0x0391, 0x03A9),
+    # Lowercase α-ω
+    (0x03B1, 0x03C9),
+
     ### Vietnamese Extended ###
-    # Vietnamese characters (1EA0-1EF9)
+    # All precomposed Vietnamese characters with tone marks
+    # Ả Ấ Ầ Ẩ Ẫ Ậ Ắ Ằ Ẳ Ẵ Ặ Ẹ Ẻ Ẽ Ế Ề Ể Ễ Ệ Ỉ Ị Ọ Ỏ Ố Ồ Ổ Ỗ Ộ Ớ Ờ Ở Ỡ Ợ Ụ Ủ Ứ Ừ Ử Ữ Ự Ỳ Ỵ Ỷ Ỹ
     (0x1EA0, 0x1EF9),
-    ### General Punctuation (core subset) ###
-    # Smart quotes, en dash, em dash, ellipsis, NO-BREAK SPACE
-    (0x2000, 0x206F),
-    ### Basic Symbols From "Latin-1 + Misc" ###
-    # dashes, quotes, prime marks
-    (0x2010, 0x203A),
-    # misc punctuation
-    (0x2040, 0x205F),
-    # common currency symbols
-    (0x20A0, 0x20CF),
-    ### Combining Diacritical Marks (minimal subset) ###
-    # Needed for proper rendering of many extended Latin languages
-    (0x0300, 0x036F),
-    ### Greek & Coptic ###
-    # Used in science, maths, philosophy, some academic texts
-    # (0x0370, 0x03FF),
-    ### Cyrillic - REMOVED to save space ###
-    # Russian, Ukrainian, Bulgarian, etc.
-    # (0x0400, 0x04FF),
-    ### Math Symbols (common subset) ###
-    # General math operators
-    (0x2200, 0x22FF),
-    # Arrows
-    (0x2190, 0x21FF),
-    ### CJK ###
-    # Core Unified Ideographs
-    # (0x4E00, 0x9FFF),
-    # # Extension A
-    # (0x3400, 0x4DBF),
-    # # Extension B
-    # (0x20000, 0x2A6DF),
-    # # Extension C–F
-    # (0x2A700, 0x2EBEF),
-    # # Extension G
-    # (0x30000, 0x3134F),
-    # # Hiragana
-    # (0x3040, 0x309F),
-    # # Katakana
-    # (0x30A0, 0x30FF),
-    # # Katakana Phonetic Extensions
-    # (0x31F0, 0x31FF),
-    # # Halfwidth Katakana
-    # (0xFF60, 0xFF9F),
-    # # Hangul Syllables
-    # (0xAC00, 0xD7AF),
-    # # Hangul Jamo
-    # (0x1100, 0x11FF),
-    # # Hangul Compatibility Jamo
-    # (0x3130, 0x318F),
-    # # Hangul Jamo Extended-A
-    # (0xA960, 0xA97F),
-    # # Hangul Jamo Extended-B
-    # (0xD7B0, 0xD7FF),
-    # # CJK Radicals Supplement
-    # (0x2E80, 0x2EFF),
-    # # Kangxi Radicals
-    # (0x2F00, 0x2FDF),
-    # # CJK Symbols and Punctuation
-    # (0x3000, 0x303F),
-    # # CJK Compatibility Forms
-    # (0xFE30, 0xFE4F),
-    # # CJK Compatibility Ideographs
-    # (0xF900, 0xFAFF),
-    ### Specials
-    # Replacement Character
+
+    ### General Punctuation (essential) ###
+    # Hyphen, dashes (–—), quotes (" " ' '), ellipsis (…), prime marks
+    (0x2010, 0x2027),
+
+    ### Arrows (basic only) ###
+    # ← ↑ → ↓ ↔ ↕ ↖ ↗ ↘ ↙
+    (0x2190, 0x2199),
+    # ⇐ ⇑ ⇒ ⇓ ⇔ ⇕ (double arrows for logic/math)
+    (0x21D0, 0x21D5),
+
+    ### Math Operators (common subset) ###
+    # ∀ ∃ ∈ ∑ √ ∞ ∂ ∆ ∏ ≈ ≠ ≤ ≥ and other common operators
+    (0x2200, 0x2270),
+
+    ### Currency Symbols ###
+    # ₠ ₡ ₢ ₣ ₤ ₥ ₦ ₧ ₨ ₩ ₪ ₫ € ... ₹ ₺ ₻ ₼ ₽ ₾ ₿
+    # Includes: ₫ (VND), € (EUR), ₩ (KRW), ₹ (INR), ₽ (RUB), ₿ (BTC)
+    # Note: $ £ ¥ ¢ are already in Latin-1 Supplement
+    (0x20A0, 0x20BF),
+
+    ### Specials ###
+    # Replacement Character (for missing glyphs)
     (0xFFFD, 0xFFFD),
+
+    ### CJK - REMOVED to save space ###
+    # Uncomment if Chinese/Japanese/Korean support is needed
+    # (0x4E00, 0x9FFF),  # Core Unified Ideographs
+    # (0x3040, 0x309F),  # Hiragana
+    # (0x30A0, 0x30FF),  # Katakana
+    # (0xAC00, 0xD7AF),  # Hangul Syllables
 ]
 
 add_ints = []
