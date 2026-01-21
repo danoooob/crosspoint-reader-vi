@@ -7,6 +7,8 @@ on:
 jobs:
   build-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -39,3 +41,12 @@ jobs:
             .pio/build/gh_release/firmware.elf
             .pio/build/gh_release/firmware.map
             .pio/build/gh_release/partitions.bin
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            .pio/build/gh_release/firmware.bin
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
