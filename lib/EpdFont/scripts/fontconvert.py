@@ -35,11 +35,24 @@ intervals = [
     ### Latin Extended-A ###
     # Eastern European and Baltic languages
     (0x0100, 0x017F),
-    ### Latin Extended-B ###
-    # Additional Eastern European characters
-    (0x0180, 0x024F),
+    ### Latin Extended-B (Vietnamese subset only) ###
+    # Only Ơ/ơ (U+01A0-01A1), Ư/ư (U+01AF-01B0) for Vietnamese
+    (0x01A0, 0x01B0),
+    ### Combining Diacritical Marks (Vietnamese essential) ###
+    # Grave, Acute, Circumflex, Tilde (U+0300-0303)
+    (0x0300, 0x0303),
+    # Hook Above - Vietnamese hỏi tone (U+0309)
+    (0x0309, 0x0309),
+    # Dot Below - Vietnamese nặng tone (U+0323)
+    (0x0323, 0x0323),
+    ### Greek (common letters only) ###
+    # Uppercase Α-Ω: used in math, science, physics (α, β, π, Δ, Σ, Ω, etc.)
+    (0x0391, 0x03A9),
+    # Lowercase α-ω
+    (0x03B1, 0x03C9),
     ### Vietnamese Extended ###
-    # Vietnamese characters (1EA0-1EF9)
+    # All precomposed Vietnamese characters with tone marks
+    # Ả Ấ Ầ Ẩ Ẫ Ậ Ắ Ằ Ẳ Ẵ Ặ Ẹ Ẻ Ẽ Ế Ề Ể Ễ Ệ Ỉ Ị Ọ Ỏ Ố Ồ Ổ Ỗ Ộ Ớ Ờ Ở Ỡ Ợ Ụ Ủ Ứ Ừ Ử Ữ Ự Ỳ Ỵ Ỷ Ỹ
     (0x1EA0, 0x1EF9),
     ### General Punctuation (core subset) ###
     # Smart quotes, en dash, em dash, ellipsis, NO-BREAK SPACE
@@ -61,6 +74,8 @@ intervals = [
     # Russian, Ukrainian, Bulgarian, etc.
     # (0x0400, 0x04FF),
     ### Math Symbols (common subset) ###
+    # Superscripts and Subscripts
+    (0x2070, 0x209F),
     # General math operators
     (0x2200, 0x22FF),
     # Arrows
@@ -104,6 +119,9 @@ intervals = [
     # (0xFE30, 0xFE4F),
     # # CJK Compatibility Ideographs
     # (0xF900, 0xFAFF),
+    ### Specials
+    # Replacement Character
+    (0xFFFD, 0xFFFD),
 ]
 
 add_ints = []
