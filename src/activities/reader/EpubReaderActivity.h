@@ -19,6 +19,9 @@ class EpubReaderActivity final : public ActivityWithSubactivity {
   int cachedSpineIndex = 0;
   int cachedChapterTotalPageCount = 0;
   bool updateRequired = false;
+  bool pendingSubactivityExit = false;  // Defer subactivity exit to avoid use-after-free
+  bool pendingGoHome = false;           // Defer go home to avoid race condition with display task
+  bool skipNextButtonCheck = false;     // Skip button processing for one frame after subactivity exit
   const std::function<void()> onGoBack;
   const std::function<void()> onGoHome;
 

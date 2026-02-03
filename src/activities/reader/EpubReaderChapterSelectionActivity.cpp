@@ -2,8 +2,6 @@
 
 #include <GfxRenderer.h>
 
-#include "KOReaderCredentialStore.h"
-#include "KOReaderSyncActivity.h"
 #include "MappedInputManager.h"
 #include "fontIds.h"
 
@@ -12,25 +10,7 @@ namespace {
 constexpr int SKIP_PAGE_MS = 700;
 }  // namespace
 
-bool EpubReaderChapterSelectionActivity::hasSyncOption() const { return KOREADER_STORE.hasCredentials(); }
-
-int EpubReaderChapterSelectionActivity::getTotalItems() const {
-  // Add 2 for sync options (top and bottom) if credentials are configured
-  const int syncCount = hasSyncOption() ? 2 : 0;
-  return epub->getTocItemsCount() + syncCount;
-}
-
-bool EpubReaderChapterSelectionActivity::isSyncItem(int index) const {
-  if (!hasSyncOption()) return false;
-  // First item and last item are sync options
-  return index == 0 || index == getTotalItems() - 1;
-}
-
-int EpubReaderChapterSelectionActivity::tocIndexFromItemIndex(int itemIndex) const {
-  // Account for the sync option at the top
-  const int offset = hasSyncOption() ? 1 : 0;
-  return itemIndex - offset;
-}
+int EpubReaderChapterSelectionActivity::getTotalItems() const { return epub->getTocItemsCount(); }
 
 int EpubReaderChapterSelectionActivity::getPageItems() const {
   // Layout constants used in renderScreen
@@ -64,13 +44,10 @@ void EpubReaderChapterSelectionActivity::onEnter() {
 
   renderingMutex = xSemaphoreCreateMutex();
 
-  // Account for sync option offset when finding current TOC index
-  const int syncOffset = hasSyncOption() ? 1 : 0;
   selectorIndex = epub->getTocIndexForSpineIndex(currentSpineIndex);
   if (selectorIndex == -1) {
     selectorIndex = 0;
   }
-  selectorIndex += syncOffset;  // Offset for top sync option
 
   // Trigger first update
   updateRequired = true;
@@ -95,24 +72,6 @@ void EpubReaderChapterSelectionActivity::onExit() {
   renderingMutex = nullptr;
 }
 
-void EpubReaderChapterSelectionActivity::launchSyncActivity() {
-  xSemaphoreTake(renderingMutex, portMAX_DELAY);
-  exitActivity();
-  enterNewActivity(new KOReaderSyncActivity(
-      renderer, mappedInput, epub, epubPath, currentSpineIndex, currentPage, totalPagesInSpine,
-      [this]() {
-        // On cancel
-        exitActivity();
-        updateRequired = true;
-      },
-      [this](int newSpineIndex, int newPage) {
-        // On sync complete
-        exitActivity();
-        onSyncPosition(newSpineIndex, newPage);
-      }));
-  xSemaphoreGive(renderingMutex);
-}
-
 void EpubReaderChapterSelectionActivity::loop() {
   if (subActivity) {
     subActivity->loop();
@@ -129,15 +88,7 @@ void EpubReaderChapterSelectionActivity::loop() {
   const int totalItems = getTotalItems();
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    // Check if sync option is selected (first or last item)
-    if (isSyncItem(selectorIndex)) {
-      launchSyncActivity();
-      return;
-    }
-
-    // Get TOC index (account for top sync offset)
-    const int tocIndex = tocIndexFromItemIndex(selectorIndex);
-    const auto newSpineIndex = epub->getSpineIndexForTocIndex(tocIndex);
+    const auto newSpineIndex = epub->getSpineIndexForTocIndex(selectorIndex);
     if (newSpineIndex == -1) {
       onGoBack();
     } else {
@@ -192,18 +143,13 @@ void EpubReaderChapterSelectionActivity::renderScreen() {
     const int displayY = 60 + i * 30;
     const bool isSelected = (itemIndex == selectorIndex);
 
-    if (isSyncItem(itemIndex)) {
-      renderer.drawText(UI_10_FONT_ID, 20, displayY, ">> Sync Progress", !isSelected);
-    } else {
-      const int tocIndex = tocIndexFromItemIndex(itemIndex);
-      auto item = epub->getTocItem(tocIndex);
+    auto item = epub->getTocItem(itemIndex);
 
-      const int indentSize = 20 + (item.level - 1) * 15;
-      const std::string chapterName =
-          renderer.truncatedText(UI_10_FONT_ID, item.title.c_str(), pageWidth - 40 - indentSize);
+    const int indentSize = 20 + (item.level - 1) * 15;
+    const std::string chapterName =
+        renderer.truncatedText(UI_10_FONT_ID, item.title.c_str(), pageWidth - 40 - indentSize);
 
-      renderer.drawText(UI_10_FONT_ID, indentSize, displayY, chapterName.c_str(), !isSelected);
-    }
+    renderer.drawText(UI_10_FONT_ID, indentSize, displayY, chapterName.c_str(), !isSelected);
   }
 
   // Skip button hints in landscape CW mode (they overlap content)

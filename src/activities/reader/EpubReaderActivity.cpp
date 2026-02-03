@@ -8,6 +8,8 @@
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "EpubReaderChapterSelectionActivity.h"
+#include "KOReaderCredentialStore.h"
+#include "KOReaderSyncActivity.h"
 #include "MappedInputManager.h"
 #include "RecentBooksStore.h"
 #include "ScreenComponents.h"
@@ -120,10 +122,49 @@ void EpubReaderActivity::loop() {
   // Pass input responsibility to sub activity if exists
   if (subActivity) {
     subActivity->loop();
+    // Deferred exit: process after subActivity->loop() returns to avoid use-after-free
+    if (pendingSubactivityExit) {
+      pendingSubactivityExit = false;
+      exitActivity();
+      updateRequired = true;
+      skipNextButtonCheck = true;  // Skip button processing to ignore stale events
+    }
+    // Deferred go home: process after subActivity->loop() returns to avoid race condition
+    if (pendingGoHome) {
+      pendingGoHome = false;
+      exitActivity();
+      if (onGoHome) {
+        onGoHome();
+      }
+      return;  // Don't access 'this' after callback
+    }
     return;
   }
 
-  // Enter chapter selection activity
+  // Handle pending go home when no subactivity (e.g., from long press back)
+  if (pendingGoHome) {
+    pendingGoHome = false;
+    if (onGoHome) {
+      onGoHome();
+    }
+    return;  // Don't access 'this' after callback
+  }
+
+  // Skip button processing after returning from subactivity
+  // This prevents stale button release events from triggering actions
+  // We wait until: (1) all relevant buttons are released, AND (2) wasReleased events have been cleared
+  if (skipNextButtonCheck) {
+    const bool confirmCleared = !mappedInput.isPressed(MappedInputManager::Button::Confirm) &&
+                                !mappedInput.wasReleased(MappedInputManager::Button::Confirm);
+    const bool backCleared = !mappedInput.isPressed(MappedInputManager::Button::Back) &&
+                             !mappedInput.wasReleased(MappedInputManager::Button::Back);
+    if (confirmCleared && backCleared) {
+      skipNextButtonCheck = false;
+    }
+    return;
+  }
+
+  // Confirm button opens menu
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
     // Don't start activity transition while rendering
     xSemaphoreTake(renderingMutex, portMAX_DELAY);
@@ -269,11 +310,8 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       break;
     }
     case EpubReaderMenuActivity::MenuAction::GO_HOME: {
-      // 2. Trigger the reader's "Go Home" callback
-      if (onGoHome) {
-        onGoHome();
-      }
-
+      // Defer go home to avoid race condition with display task
+      pendingGoHome = true;
       break;
     }
     case EpubReaderMenuActivity::MenuAction::DELETE_CACHE: {
@@ -294,10 +332,34 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
 
         saveProgress(backupSpine, backupPage, backupPageCount);
       }
-      exitActivity();
-      updateRequired = true;
       xSemaphoreGive(renderingMutex);
-      if (onGoHome) onGoHome();
+      // Defer go home to avoid race condition with display task
+      pendingGoHome = true;
+      break;
+    }
+    case EpubReaderMenuActivity::MenuAction::SYNC: {
+      if (KOREADER_STORE.hasCredentials()) {
+        xSemaphoreTake(renderingMutex, portMAX_DELAY);
+        const int currentPage = section ? section->currentPage : 0;
+        const int totalPages = section ? section->pageCount : 0;
+        exitActivity();
+        enterNewActivity(new KOReaderSyncActivity(
+            renderer, mappedInput, epub, epub->getPath(), currentSpineIndex, currentPage, totalPages,
+            [this]() {
+              // On cancel - defer exit to avoid use-after-free
+              pendingSubactivityExit = true;
+            },
+            [this](int newSpineIndex, int newPage) {
+              // On sync complete - update position and defer exit
+              if (currentSpineIndex != newSpineIndex || (section && section->currentPage != newPage)) {
+                currentSpineIndex = newSpineIndex;
+                nextPageNumber = newPage;
+                section.reset();
+              }
+              pendingSubactivityExit = true;
+            }));
+        xSemaphoreGive(renderingMutex);
+      }
       break;
     }
   }
