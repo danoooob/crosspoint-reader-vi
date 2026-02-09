@@ -1,6 +1,6 @@
 #pragma once
 
-#include <InputManager.h>
+#include <HalGPIO.h>
 
 class MappedInputManager {
  public:
@@ -13,7 +13,7 @@ class MappedInputManager {
     const char* btn4;
   };
 
-  explicit MappedInputManager(InputManager& inputManager) : inputManager(inputManager) {}
+  explicit MappedInputManager(HalGPIO& gpio) : gpio(gpio) {}
 
   bool wasPressed(Button button) const;
   bool wasReleased(Button button) const;
@@ -22,9 +22,11 @@ class MappedInputManager {
   bool wasAnyReleased() const;
   unsigned long getHeldTime() const;
   Labels mapLabels(const char* back, const char* confirm, const char* previous, const char* next) const;
+  // Returns the raw front button index that was pressed this frame (or -1 if none).
+  int getPressedFrontButton() const;
 
  private:
-  InputManager& inputManager;
+  HalGPIO& gpio;
 
-  bool mapButton(Button button, bool (InputManager::*fn)(uint8_t) const) const;
+  bool mapButton(Button button, bool (HalGPIO::*fn)(uint8_t) const) const;
 };

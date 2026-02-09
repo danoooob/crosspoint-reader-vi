@@ -5,90 +5,105 @@
 namespace {
 using ButtonIndex = uint8_t;
 
-struct FrontLayoutMap {
-  ButtonIndex back;
-  ButtonIndex confirm;
-  ButtonIndex left;
-  ButtonIndex right;
-};
-
 struct SideLayoutMap {
   ButtonIndex pageBack;
   ButtonIndex pageForward;
 };
 
-// Order matches CrossPointSettings::FRONT_BUTTON_LAYOUT.
-constexpr FrontLayoutMap kFrontLayouts[] = {
-    {InputManager::BTN_BACK, InputManager::BTN_CONFIRM, InputManager::BTN_LEFT, InputManager::BTN_RIGHT},
-    {InputManager::BTN_LEFT, InputManager::BTN_RIGHT, InputManager::BTN_BACK, InputManager::BTN_CONFIRM},
-    {InputManager::BTN_CONFIRM, InputManager::BTN_LEFT, InputManager::BTN_BACK, InputManager::BTN_RIGHT},
-    {InputManager::BTN_BACK, InputManager::BTN_CONFIRM, InputManager::BTN_RIGHT, InputManager::BTN_LEFT},
-};
-
 // Order matches CrossPointSettings::SIDE_BUTTON_LAYOUT.
 constexpr SideLayoutMap kSideLayouts[] = {
-    {InputManager::BTN_UP, InputManager::BTN_DOWN},
-    {InputManager::BTN_DOWN, InputManager::BTN_UP},
+    {HalGPIO::BTN_UP, HalGPIO::BTN_DOWN},
+    {HalGPIO::BTN_DOWN, HalGPIO::BTN_UP},
 };
 }  // namespace
 
-bool MappedInputManager::mapButton(const Button button, bool (InputManager::*fn)(uint8_t) const) const {
-  const auto frontLayout = static_cast<CrossPointSettings::FRONT_BUTTON_LAYOUT>(SETTINGS.frontButtonLayout);
+bool MappedInputManager::mapButton(const Button button, bool (HalGPIO::*fn)(uint8_t) const) const {
   const auto sideLayout = static_cast<CrossPointSettings::SIDE_BUTTON_LAYOUT>(SETTINGS.sideButtonLayout);
-  const auto& front = kFrontLayouts[frontLayout];
   const auto& side = kSideLayouts[sideLayout];
 
   switch (button) {
     case Button::Back:
-      return (inputManager.*fn)(front.back);
+      // Logical Back maps to user-configured front button.
+      return (gpio.*fn)(SETTINGS.frontButtonBack);
     case Button::Confirm:
-      return (inputManager.*fn)(front.confirm);
+      // Logical Confirm maps to user-configured front button.
+      return (gpio.*fn)(SETTINGS.frontButtonConfirm);
     case Button::Left:
-      return (inputManager.*fn)(front.left);
+      // Logical Left maps to user-configured front button.
+      return (gpio.*fn)(SETTINGS.frontButtonLeft);
     case Button::Right:
-      return (inputManager.*fn)(front.right);
+      // Logical Right maps to user-configured front button.
+      return (gpio.*fn)(SETTINGS.frontButtonRight);
     case Button::Up:
-      return (inputManager.*fn)(InputManager::BTN_UP);
+      // Side buttons remain fixed for Up/Down.
+      return (gpio.*fn)(HalGPIO::BTN_UP);
     case Button::Down:
-      return (inputManager.*fn)(InputManager::BTN_DOWN);
+      // Side buttons remain fixed for Up/Down.
+      return (gpio.*fn)(HalGPIO::BTN_DOWN);
     case Button::Power:
-      return (inputManager.*fn)(InputManager::BTN_POWER);
+      // Power button bypasses remapping.
+      return (gpio.*fn)(HalGPIO::BTN_POWER);
     case Button::PageBack:
-      return (inputManager.*fn)(side.pageBack);
+      // Reader page navigation uses side buttons and can be swapped via settings.
+      return (gpio.*fn)(side.pageBack);
     case Button::PageForward:
-      return (inputManager.*fn)(side.pageForward);
+      // Reader page navigation uses side buttons and can be swapped via settings.
+      return (gpio.*fn)(side.pageForward);
   }
 
   return false;
 }
 
-bool MappedInputManager::wasPressed(const Button button) const { return mapButton(button, &InputManager::wasPressed); }
+bool MappedInputManager::wasPressed(const Button button) const { return mapButton(button, &HalGPIO::wasPressed); }
 
-bool MappedInputManager::wasReleased(const Button button) const {
-  return mapButton(button, &InputManager::wasReleased);
-}
+bool MappedInputManager::wasReleased(const Button button) const { return mapButton(button, &HalGPIO::wasReleased); }
 
-bool MappedInputManager::isPressed(const Button button) const { return mapButton(button, &InputManager::isPressed); }
+bool MappedInputManager::isPressed(const Button button) const { return mapButton(button, &HalGPIO::isPressed); }
 
-bool MappedInputManager::wasAnyPressed() const { return inputManager.wasAnyPressed(); }
+bool MappedInputManager::wasAnyPressed() const { return gpio.wasAnyPressed(); }
 
-bool MappedInputManager::wasAnyReleased() const { return inputManager.wasAnyReleased(); }
+bool MappedInputManager::wasAnyReleased() const { return gpio.wasAnyReleased(); }
 
-unsigned long MappedInputManager::getHeldTime() const { return inputManager.getHeldTime(); }
+unsigned long MappedInputManager::getHeldTime() const { return gpio.getHeldTime(); }
 
 MappedInputManager::Labels MappedInputManager::mapLabels(const char* back, const char* confirm, const char* previous,
                                                          const char* next) const {
-  const auto layout = static_cast<CrossPointSettings::FRONT_BUTTON_LAYOUT>(SETTINGS.frontButtonLayout);
+  // Build the label order based on the configured hardware mapping.
+  auto labelForHardware = [&](uint8_t hw) -> const char* {
+    // Compare against configured logical roles and return the matching label.
+    if (hw == SETTINGS.frontButtonBack) {
+      return back;
+    }
+    if (hw == SETTINGS.frontButtonConfirm) {
+      return confirm;
+    }
+    if (hw == SETTINGS.frontButtonLeft) {
+      return previous;
+    }
+    if (hw == SETTINGS.frontButtonRight) {
+      return next;
+    }
+    return "";
+  };
 
-  switch (layout) {
-    case CrossPointSettings::LEFT_RIGHT_BACK_CONFIRM:
-      return {previous, next, back, confirm};
-    case CrossPointSettings::LEFT_BACK_CONFIRM_RIGHT:
-      return {previous, back, confirm, next};
-    case CrossPointSettings::BACK_CONFIRM_RIGHT_LEFT:
-      return {back, confirm, next, previous};
-    case CrossPointSettings::BACK_CONFIRM_LEFT_RIGHT:
-    default:
-      return {back, confirm, previous, next};
+  return {labelForHardware(HalGPIO::BTN_BACK), labelForHardware(HalGPIO::BTN_CONFIRM),
+          labelForHardware(HalGPIO::BTN_LEFT), labelForHardware(HalGPIO::BTN_RIGHT)};
+}
+
+int MappedInputManager::getPressedFrontButton() const {
+  // Scan the raw front buttons in hardware order.
+  // This bypasses remapping so the remap activity can capture physical presses.
+  if (gpio.wasPressed(HalGPIO::BTN_BACK)) {
+    return HalGPIO::BTN_BACK;
   }
+  if (gpio.wasPressed(HalGPIO::BTN_CONFIRM)) {
+    return HalGPIO::BTN_CONFIRM;
+  }
+  if (gpio.wasPressed(HalGPIO::BTN_LEFT)) {
+    return HalGPIO::BTN_LEFT;
+  }
+  if (gpio.wasPressed(HalGPIO::BTN_RIGHT)) {
+    return HalGPIO::BTN_RIGHT;
+  }
+  return -1;
 }
