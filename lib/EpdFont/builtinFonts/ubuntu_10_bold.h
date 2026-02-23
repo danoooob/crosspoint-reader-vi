@@ -1827,4 +1827,6 @@ static const EpdFontData ubuntu_10_bold = {
     20,
     -4,
     false,
+    nullptr,
+    0,
 };
