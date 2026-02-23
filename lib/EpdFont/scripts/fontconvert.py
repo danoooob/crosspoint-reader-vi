@@ -40,13 +40,6 @@ intervals = [
     ### Latin Extended-B (Vietnamese subset only) ###
     # Only Ơ/ơ (U+01A0-01A1), Ư/ư (U+01AF-01B0) for Vietnamese
     (0x01A0, 0x01B0),
-    ### Combining Diacritical Marks (Vietnamese essential) ###
-    # Grave, Acute, Circumflex, Tilde (U+0300-0303)
-    (0x0300, 0x0303),
-    # Hook Above - Vietnamese hỏi tone (U+0309)
-    (0x0309, 0x0309),
-    # Dot Below - Vietnamese nặng tone (U+0323)
-    (0x0323, 0x0323),
     ### Vietnamese Extended ###
     # All precomposed Vietnamese characters with tone marks
     # Ả Ấ Ầ Ẩ Ẫ Ậ Ắ Ằ Ẳ Ẵ Ặ Ẹ Ẻ Ẽ Ế Ề Ể Ễ Ệ Ỉ Ị Ọ Ỏ Ố Ồ Ổ Ỗ Ộ Ớ Ờ Ở Ỡ Ợ Ụ Ủ Ứ Ừ Ử Ữ Ự Ỳ Ỵ Ỷ Ỹ
