@@ -1,5 +1,6 @@
 #!python3
 import freetype
+import zlib
 import sys
 import re
 import math
@@ -63,7 +64,7 @@ intervals = [
     (0x2010, 0x203A),
     # misc punctuation
     (0x2040, 0x205F),
-    # common currency symbols
+    # common currency fix some conflictssymbols
     (0x20A0, 0x20CF),
     ### Combining Diacritical Marks (minimal subset) ###
     # Needed for proper rendering of many extended Latin languages
@@ -71,9 +72,9 @@ intervals = [
     ### Greek & Coptic ###
     # Used in science, maths, philosophy, some academic texts
     # (0x0370, 0x03FF),
-    ### Cyrillic - REMOVED to save space ###
+    ### Cyrillic ###
     # Russian, Ukrainian, Bulgarian, etc.
-    # (0x0400, 0x04FF),
+    (0x0400, 0x04FF),
     ### Math Symbols (common subset) ###
     # Superscripts and Subscripts
     (0x2070, 0x209F),
